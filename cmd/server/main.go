@@ -27,33 +27,40 @@ func main() {
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	// Serve static frontend files
+	// Serve static frontend files dynamically
 	staticDir := "frontend/dist"
 	if _, err := os.Stat(staticDir); err == nil {
-		indexContent, err := os.ReadFile(filepath.Join(staticDir, "index.html"))
-		if err == nil {
-			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				// Don't serve HTML index for API routes
-				if strings.HasPrefix(r.URL.Path, "/api/") {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusNotFound)
-					fmt.Fprintf(w, `{"error":"API endpoint '%s' not found"}`, r.URL.Path)
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Don't serve HTML index for API routes
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprintf(w, `{"error":"API endpoint '%s' not found"}`, r.URL.Path)
+				return
+			}
+
+			if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+				filePath := filepath.Join(staticDir, filepath.Clean(r.URL.Path))
+				if fi, err := os.Stat(filePath); err == nil && !fi.IsDir() {
+					http.ServeFile(w, r, filePath)
 					return
 				}
+			}
 
-				if r.URL.Path != "/" && r.URL.Path != "/index.html" {
-					filePath := filepath.Join(staticDir, filepath.Clean(r.URL.Path))
-					if fi, err := os.Stat(filePath); err == nil && !fi.IsDir() {
-						http.ServeFile(w, r, filePath)
-						return
-					}
-				}
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.WriteHeader(http.StatusOK)
-				w.Write(indexContent)
-			})
-			log.Printf("Serving static frontend assets from %s", staticDir)
-		}
+			// Read fresh index.html dynamically on request
+			indexPath := filepath.Join(staticDir, "index.html")
+			indexContent, err := os.ReadFile(indexPath)
+			if err != nil {
+				http.Error(w, "Index HTML not found", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.WriteHeader(http.StatusOK)
+			w.Write(indexContent)
+		})
+		log.Printf("Serving static frontend assets dynamically from %s", staticDir)
 	}
 
 	addr := fmt.Sprintf(":%d", *port)
