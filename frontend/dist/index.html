@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebPulse — Web Testing & Diagnostics Platform</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            },
+            darkbg: '#0b0f17',
+            darkcard: '#131b2e',
+            darkborder: '#1e293b'
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <style>
+    body { background-color: #0b0f17; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    .glass-card { background: rgba(19, 27, 46, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .progress-bar-fill { transition: width 0.3s ease-in-out; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="navigateTo('dashboard')">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xl">
+          <i class="fa-solid fa-wave-square"></i>
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight text-white">WebPulse</span>
+          <span class="ml-2 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono">v1.0.0</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="hidden md:flex items-center space-x-1">
+        <button onclick="navigateTo('dashboard')" id="nav-dashboard" class="nav-btn px-4 py-2 rounded-lg text-sm font-medium transition text-emerald-400 bg-emerald-500/10">
+          <i class="fa-solid fa-chart-pie mr-2"></i>Dashboard
+        </button>
+        <button onclick="navigateTo('new-test')" id="nav-new-test" class="nav-btn px-4 py-2 rounded-lg text-sm font-medium transition text-slate-400 hover:text-white hover:bg-slate-800">
+          <i class="fa-solid fa-plus-circle mr-2"></i>New Test
+        </button>
+        <button onclick="navigateTo('egress')" id="nav-egress" class="nav-btn px-4 py-2 rounded-lg text-sm font-medium transition text-slate-400 hover:text-white hover:bg-slate-800">
+          <i class="fa-solid fa-network-wired mr-2"></i>Egress & WAF
+        </button>
+        <button onclick="navigateTo('doctor')" id="nav-doctor" class="nav-btn px-4 py-2 rounded-lg text-sm font-medium transition text-slate-400 hover:text-white hover:bg-slate-800">
+          <i class="fa-solid fa-user-md mr-2"></i>Doctor
+        </button>
+      </nav>
+
+      <!-- Egress IP Badge -->
+      <div id="header-egress-badge" class="flex items-center space-x-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-400">Egress:</span>
+        <span id="header-egress-ip">Detecting...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- 1. DASHBOARD PAGE -->
+    <div id="page-dashboard" class="page-view space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-white">Diagnostic Dashboard</h1>
+          <p class="text-slate-400 text-sm">Real-time status overview of authorized URL diagnostic jobs</p>
+        </div>
+        <button onclick="navigateTo('new-test')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/20 transition">
+          <i class="fa-solid fa-rocket"></i>
+          <span>Launch New Test</span>
+        </button>
+      </div>
+
+      <!-- Overview Metric Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-card p-5 rounded-2xl border border-slate-800">
+          <div class="flex items-center justify-between text-slate-400 text-sm">
+            <span>Total URLs Tested</span>
+            <i class="fa-solid fa-list-check text-emerald-400 text-lg"></i>
+          </div>
+          <div id="stat-total-urls" class="text-3xl font-extrabold text-white mt-2">0</div>
+          <div class="text-xs text-slate-500 mt-1">Across all historical jobs</div>
+        </div>
+
+        <div class="glass-card p-5 rounded-2xl border border-slate-800">
+          <div class="flex items-center justify-between text-slate-400 text-sm">
+            <span>Successful Probes</span>
+            <i class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+          </div>
+          <div id="stat-success-urls" class="text-3xl font-extrabold text-emerald-400 mt-2">0</div>
+          <div class="text-xs text-emerald-500/80 mt-1">2xx / 3xx HTTP status</div>
+        </div>
+
+        <div class="glass-card p-5 rounded-2xl border border-slate-800">
+          <div class="flex items-center justify-between text-slate-400 text-sm">
+            <span>Failed & Blocked</span>
+            <i class="fa-solid fa-triangle-exclamation text-rose-400 text-lg"></i>
+          </div>
+          <div id="stat-failed-urls" class="text-3xl font-extrabold text-rose-400 mt-2">0</div>
+          <div class="text-xs text-rose-500/80 mt-1">Errors or SSRF/Scope blocked</div>
+        </div>
+
+        <div class="glass-card p-5 rounded-2xl border border-slate-800">
+          <div class="flex items-center justify-between text-slate-400 text-sm">
+            <span>Avg Response Latency</span>
+            <i class="fa-solid fa-gauge-high text-blue-400 text-lg"></i>
+          </div>
+          <div id="stat-avg-latency" class="text-3xl font-extrabold text-blue-400 mt-2">0ms</div>
+          <div class="text-xs text-slate-500 mt-1">Full HTTP TTFB duration</div>
+        </div>
+      </div>
+
+      <!-- Recent Jobs Table -->
+      <div class="glass-card rounded-2xl p-6 border border-slate-800">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center justify-between">
+          <span>Recent Diagnostic Jobs</span>
+          <button onclick="loadDashboardJobs()" class="text-xs text-slate-400 hover:text-white"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
+        </h2>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-800/50 text-slate-400 uppercase text-xs font-mono border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Job ID</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Profile</th>
+                <th class="py-3 px-4">Total URLs</th>
+                <th class="py-3 px-4">Completed</th>
+                <th class="py-3 px-4">Created At</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-jobs-list" class="divide-y divide-slate-800/60">
+              <tr><td colspan="7" class="py-8 text-center text-slate-500">Loading jobs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. NEW TEST PAGE -->
+    <div id="page-new-test" class="page-view space-y-6 hidden">
+      <div class="max-w-3xl mx-auto space-y-6">
+        <div>
+          <h1 class="text-2xl font-bold text-white">Create Diagnostic Job</h1>
+          <p class="text-slate-400 text-sm">Configure target URLs, profile, and authorization scope rules</p>
+        </div>
+
+        <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
+          
+          <!-- Authorization Banner -->
+          <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start space-x-3 text-amber-200 text-xs">
+            <i class="fa-solid fa-shield-halved text-amber-400 text-base mt-0.5"></i>
+            <div>
+              <span class="font-bold block text-sm text-amber-300">Authorization Notice</span>
+              Only test systems you own or have explicit authorization to test. Unauthorized probing of external infrastructure is prohibited.
+            </div>
+          </div>
+
+          <!-- URL Input -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Target URLs (Paste multiple or upload TXT/CSV/JSON)</label>
+            <textarea id="input-urls" rows="6" placeholder="https://example.com&#10;https://example.org&#10;https://api.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"></textarea>
+          </div>
+
+          <!-- File Upload Drag & Drop -->
+          <div class="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-xl p-4 text-center cursor-pointer transition bg-slate-900/40" onclick="document.getElementById('file-upload-input').click()">
+            <i class="fa-solid fa-cloud-arrow-up text-slate-400 text-2xl mb-2"></i>
+            <p class="text-xs text-slate-300 font-medium">Click to upload <code class="text-emerald-400">urls.txt</code>, <code class="text-emerald-400">urls.csv</code>, or <code class="text-emerald-400">urls.json</code></p>
+            <input type="file" id="file-upload-input" class="hidden" accept=".txt,.csv,.json" onchange="handleFileUpload(event)"/>
+          </div>
+
+          <!-- Test Profile & Concurrency -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-300 mb-2">Test Profile</label>
+              <select id="select-profile" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-emerald-500">
+                <option value="standard">Standard (10s timeout, 10 workers)</option>
+                <option value="quick">Quick (5s timeout, 20 workers)</option>
+                <option value="comprehensive">Comprehensive (15s timeout, 5 workers, 3 retries)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-300 mb-2">Max Workers Concurrency</label>
+              <input type="number" id="input-workers" min="1" max="50" value="10" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-emerald-500"/>
+            </div>
+          </div>
+
+          <!-- Scope Authorization Rules -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Allowed Target Scopes (Optional wildcards, e.g. <code class="text-emerald-400">*.example.com</code>)</label>
+            <input type="text" id="input-scope" placeholder="*.example.com, example.org" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"/>
+          </div>
+
+          <!-- Authorization Confirmation Checkbox -->
+          <div class="flex items-center space-x-3 pt-2">
+            <input type="checkbox" id="check-auth-confirm" class="w-4 h-4 text-emerald-600 bg-slate-900 border-slate-700 rounded focus:ring-emerald-500"/>
+            <label for="check-auth-confirm" class="text-xs text-slate-300 cursor-pointer">
+              I confirm that I own or have explicit written authorization to test all provided target URLs.
+            </label>
+          </div>
+
+          <!-- Submit Buttons -->
+          <div class="flex space-x-3 pt-4 border-t border-slate-800">
+            <button onclick="submitJob()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-emerald-600/20 transition flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-play"></i>
+              <span>Start Diagnostic Job</span>
+            </button>
+            <button onclick="validateTargetsDryRun()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-3 rounded-xl font-medium text-sm transition">
+              Dry Run Validate
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. JOB DETAIL & LIVE STREAM PAGE -->
+    <div id="page-job-detail" class="page-view space-y-6 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div class="flex items-center space-x-3">
+            <h1 id="detail-job-id" class="text-2xl font-bold text-white font-mono">Job #...</h1>
+            <span id="detail-job-status" class="px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30">Running</span>
+          </div>
+          <p class="text-slate-400 text-sm mt-1">Real-time diagnostic probe telemetry and target breakdown</p>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <button onclick="downloadJobExport('json')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs font-medium border border-slate-700"><i class="fa-solid fa-download mr-1"></i>JSON</button>
+          <button onclick="downloadJobExport('csv')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs font-medium border border-slate-700"><i class="fa-solid fa-file-csv mr-1"></i>CSV</button>
+          <button onclick="downloadJobExport('zip')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs font-medium border border-slate-700"><i class="fa-solid fa-file-zipper mr-1"></i>ZIP Bundle</button>
+          <button id="btn-cancel-job" onclick="cancelActiveJob()" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 px-3 py-2 rounded-lg text-xs font-medium"><i class="fa-solid fa-stop mr-1"></i>Cancel</button>
+        </div>
+      </div>
+
+      <!-- Real-time Progress Bar Card -->
+      <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+        <div class="flex items-center justify-between text-sm">
+          <div class="font-medium text-slate-300">
+            Progress: <span id="detail-completed-count" class="font-bold text-white">0</span> / <span id="detail-total-count" class="text-slate-400">0</span> URLs
+          </div>
+          <div id="detail-percent-text" class="font-extrabold text-emerald-400 font-mono">0%</div>
+        </div>
+
+        <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-slate-800">
+          <div id="detail-progress-fill" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full w-0 progress-bar-fill"></div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-2 text-center text-xs font-mono pt-2">
+          <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800"><span class="text-slate-400">Completed:</span> <span id="counter-completed" class="text-emerald-400 font-bold">0</span></div>
+          <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800"><span class="text-slate-400">Failed:</span> <span id="counter-failed" class="text-rose-400 font-bold">0</span></div>
+          <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800"><span class="text-slate-400">Blocked:</span> <span id="counter-blocked" class="text-amber-400 font-bold">0</span></div>
+          <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800"><span class="text-slate-400">Workers:</span> <span id="counter-workers" class="text-blue-400 font-bold">10</span></div>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="glass-card rounded-2xl p-6 border border-slate-800">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h2 class="text-lg font-bold text-white">Target Results</h2>
+          <input type="text" id="filter-results-search" oninput="filterResultsTable()" placeholder="Search URL or Status..." class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 w-64"/>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-800/50 text-slate-400 uppercase text-xs font-mono border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Target URL</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">HTTP</th>
+                <th class="py-3 px-4">Latency</th>
+                <th class="py-3 px-4">Resolved IP</th>
+                <th class="py-3 px-4 text-right">Details</th>
+              </tr>
+            </thead>
+            <tbody id="job-results-list" class="divide-y divide-slate-800/60">
+              <tr><td colspan="6" class="py-8 text-center text-slate-500">Waiting for probe execution...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. EGRESS & WAF ALLOWLISTING PAGE -->
+    <div id="page-egress" class="page-view space-y-6 hidden">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Egress & WAF Allowlisting Verification</h1>
+        <p class="text-slate-400 text-sm">Determine outbound public IP addresses used by the testing engine for firewall rules</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Live Egress Info Card -->
+        <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+          <h2 class="text-lg font-bold text-white border-b border-slate-800 pb-3 flex items-center justify-between">
+            <span>Outbound IP Info</span>
+            <button onclick="refreshEgressInfo()" class="text-xs text-emerald-400 hover:text-emerald-300"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
+          </h2>
+
+          <div class="space-y-3 font-mono text-sm">
+            <div>
+              <span class="text-xs text-slate-400 block uppercase">Public IPv4 Address</span>
+              <div class="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800 mt-1">
+                <span id="egress-ipv4-val" class="font-bold text-emerald-400">Detecting...</span>
+                <button onclick="copyToClipboard('egress-ipv4-val')" class="text-xs text-slate-400 hover:text-white"><i class="fa-solid fa-copy"></i></button>
+              </div>
+            </div>
+
+            <div>
+              <span class="text-xs text-slate-400 block uppercase">Verification Endpoint</span>
+              <div id="egress-endpoint-val" class="text-xs text-slate-300 bg-slate-900/60 p-2 rounded-lg mt-1 border border-slate-800">api.ipify.org</div>
+            </div>
+
+            <div>
+              <span class="text-xs text-slate-400 block uppercase">Outbound Status</span>
+              <div id="egress-status-val" class="text-xs text-emerald-400 font-bold mt-1">✓ Outbound Connectivity Available</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- WAF Allowlisting Documentation -->
+        <div class="lg:col-span-2 glass-card p-6 rounded-2xl border border-slate-800 space-y-4 text-sm text-slate-300">
+          <h2 class="text-lg font-bold text-white border-b border-slate-800 pb-3">WAF & Firewall Allowlisting Guide</h2>
+          
+          <p>
+            When conducting authorized URL probes, target Cloud WAFs (e.g. Cloudflare, AWS WAF, Akamai, Imperva) or ingress firewalls may rate-limit or block incoming probes unless the application's outbound egress IP is explicitly allowlisted.
+          </p>
+
+          <h3 class="font-bold text-white mt-4">Why Allowlisting is Required</h3>
+          <ul class="list-disc list-inside space-y-1 text-slate-400 text-xs">
+            <li>Prevents false positive WAF security triggers during high-concurrency automated diagnostic scans.</li>
+            <li>Ensures accurate HTTP status, TLS negotiation, and response time metrics without synthetic WAF challenge delays.</li>
+          </ul>
+
+          <h3 class="font-bold text-white mt-4">Step-by-Step Allowlisting Workflow</h3>
+          <ol class="list-decimal list-inside space-y-2 text-slate-300 text-xs">
+            <li>Identify the displayed <strong>Public IPv4 Address</strong> on the left panel.</li>
+            <li>Navigate to your WAF management console (e.g., Cloudflare Security Rules / AWS WAF IP Sets).</li>
+            <li>Add an IP Allowlist rule for the observed egress IP with action: <code class="text-emerald-400">ALLOW / PASS</code>.</li>
+            <li>Ensure User-Agent header <code class="text-emerald-400">WebPulse-Engine/1.0</code> is permitted.</li>
+          </ol>
+
+          <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-200">
+            <i class="fa-solid fa-info-circle mr-1 text-blue-400"></i>
+            WebPulse strictly enforces authorized testing policies and does <strong>not</strong> attempt to defeat or bypass WAF security rules.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. DOCTOR PAGE -->
+    <div id="page-doctor" class="page-view space-y-6 hidden">
+      <div>
+        <h1 class="text-2xl font-bold text-white">System Connectivity Doctor</h1>
+        <p class="text-slate-400 text-sm">Diagnose network, DNS, TLS, and egress IP connectivity</p>
+      </div>
+
+      <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-lg font-bold text-white">Environment Readiness</h2>
+            <p class="text-xs text-slate-400">Evaluates whether Docker, DNS, and outbound sockets are ready for probing</p>
+          </div>
+          <button onclick="runDoctorChecks()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg transition">
+            <i class="fa-solid fa-stethoscope mr-1"></i>Run Diagnostic Checks
+          </button>
+        </div>
+
+        <div id="doctor-checks-container" class="space-y-3 font-mono text-sm">
+          <div class="text-slate-500 text-center py-4">Click "Run Diagnostic Checks" to inspect system environment.</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Target Details Modal -->
+  <div id="modal-target-details" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-card bg-slate-950 border border-slate-800 w-full max-w-2xl rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="modal-target-url" class="font-bold text-white font-mono text-sm truncate max-w-md">Target Details</h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div id="modal-target-content" class="space-y-4 text-xs font-mono">
+        <!-- Dynamic Target Details -->
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Frontend Router & Logic -->
+  <script>
+    let currentJobResults = [];
+    let currentSSE = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshEgressHeader();
+      loadDashboardJobs();
+    });
+
+    function navigateTo(pageId) {
+      document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-btn').forEach(el => {
+        el.classList.remove('text-emerald-400', 'bg-emerald-500/10');
+        el.classList.add('text-slate-400');
+      });
+
+      document.getElementById(`page-${pageId}`).classList.remove('hidden');
+      const activeNav = document.getElementById(`nav-${pageId}`);
+      if (activeNav) {
+        activeNav.classList.remove('text-slate-400');
+        activeNav.classList.add('text-emerald-400', 'bg-emerald-500/10');
+      }
+
+      if (pageId === 'dashboard') loadDashboardJobs();
+      if (pageId === 'egress') refreshEgressInfo();
+      if (pageId === 'doctor') runDoctorChecks();
+    }
+
+    async function refreshEgressHeader() {
+      try {
+        const res = await fetch('/api/v1/egress');
+        const data = await res.json();
+        if (data.ipv4) {
+          document.getElementById('header-egress-ip').innerText = data.ipv4;
+        } else {
+          document.getElementById('header-egress-ip').innerText = 'Unknown';
+        }
+      } catch (e) {
+        document.getElementById('header-egress-ip').innerText = 'Offline';
+      }
+    }
+
+    async function loadDashboardJobs() {
+      try {
+        const res = await fetch('/api/v1/jobs');
+        const jobs = await res.json();
+        const tbody = document.getElementById('dashboard-jobs-list');
+
+        if (!jobs || jobs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No jobs created yet. Click "Launch New Test" above.</td></tr>`;
+          return;
+        }
+
+        let totalURLs = 0, successURLs = 0, failedURLs = 0, totalLatency = 0, latencyCount = 0;
+
+        tbody.innerHTML = jobs.map(j => {
+          totalURLs += j.total_urls || 0;
+          const completed = j.completed_urls || 0;
+          const failed = (j.failed_urls || 0) + (j.blocked_urls || 0);
+          successURLs += (completed - failed);
+          failedURLs += failed;
+
+          if (j.results) {
+            j.results.forEach(r => {
+              if (r.response && r.response.total_time_ms > 0) {
+                totalLatency += r.response.total_time_ms;
+                latencyCount++;
+              }
+            });
+          }
+
+          const statusBadge = j.status === 'completed' 
+            ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Completed</span>`
+            : `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse">Running</span>`;
+
+          const dateStr = new Date(j.created_at).toLocaleString();
+
+          return `
+            <tr class="hover:bg-slate-800/30 transition cursor-pointer" onclick="openJobDetail('${j.id}')">
+              <td class="py-3 px-4 font-mono font-bold text-white">${j.id}</td>
+              <td class="py-3 px-4">${statusBadge}</td>
+              <td class="py-3 px-4 font-mono text-xs uppercase">${j.profile}</td>
+              <td class="py-3 px-4 font-mono">${j.total_urls}</td>
+              <td class="py-3 px-4 font-mono text-emerald-400">${j.completed_urls}</td>
+              <td class="py-3 px-4 text-xs text-slate-400">${dateStr}</td>
+              <td class="py-3 px-4 text-right">
+                <button class="text-xs text-emerald-400 hover:text-emerald-300 font-medium">Inspect <i class="fa-solid fa-chevron-right ml-1"></i></button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        document.getElementById('stat-total-urls').innerText = totalURLs;
+        document.getElementById('stat-success-urls').innerText = successURLs;
+        document.getElementById('stat-failed-urls').innerText = failedURLs;
+        document.getElementById('stat-avg-latency').innerText = latencyCount > 0 ? `${Math.round(totalLatency / latencyCount)}ms` : '0ms';
+
+      } catch (e) {
+        console.error('Failed to load dashboard jobs:', e);
+      }
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('input-urls').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+
+    async function submitJob() {
+      const urlsText = document.getElementById('input-urls').value;
+      const authConfirm = document.getElementById('check-auth-confirm').checked;
+
+      if (!authConfirm) {
+        alert('Please confirm that you have explicit written authorization to test the provided URLs.');
+        return;
+      }
+
+      const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u && !u.startsWith('#'));
+      if (urls.length === 0) {
+        alert('Please enter at least one target URL.');
+        return;
+      }
+
+      const profile = document.getElementById('select-profile').value;
+      const workers = parseInt(document.getElementById('input-workers').value) || 10;
+      const scopeText = document.getElementById('input-scope').value;
+      const allowedScopes = scopeText ? scopeText.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      try {
+        const res = await fetch('/api/v1/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: urls,
+            profile: profile,
+            workers: workers,
+            allowed_scopes: allowedScopes
+          })
+        });
+
+        const data = await res.json();
+        if (data.id) {
+          openJobDetail(data.id);
+        } else {
+          alert('Failed to launch job: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Error connecting to server: ' + e);
+      }
+    }
+
+    async function validateTargetsDryRun() {
+      const urlsText = document.getElementById('input-urls').value;
+      const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u && !u.startsWith('#'));
+      if (urls.length === 0) {
+        alert('Please enter at least one target URL.');
+        return;
+      }
+
+      const scopeText = document.getElementById('input-scope').value;
+      const allowedScopes = scopeText ? scopeText.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      const res = await fetch('/api/v1/targets/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, allowed_scopes: allowedScopes })
+      });
+
+      const results = await res.json();
+      let msg = 'DRY RUN VALIDATION RESULTS:\n\n';
+      results.forEach(r => {
+        msg += `[${r.status}] ${r.url} -> ${r.reason}\n`;
+      });
+      alert(msg);
+    }
+
+    async function openJobDetail(jobId) {
+      navigateTo('job-detail');
+      document.getElementById('detail-job-id').innerText = jobId;
+
+      // Close previous SSE stream if any
+      if (currentSSE) {
+        currentSSE.close();
+        currentSSE = null;
+      }
+
+      const res = await fetch(`/api/v1/jobs/${jobId}`);
+      const job = await res.json();
+
+      updateJobUI(job);
+
+      if (job.status === 'running') {
+        currentSSE = new EventSource(`/api/v1/jobs/${jobId}/stream`);
+        currentSSE.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === 'progress') {
+            fetch(`/api/v1/jobs/${jobId}`).then(r => r.json()).then(updatedJob => updateJobUI(updatedJob));
+          } else if (data.type === 'completed') {
+            fetch(`/api/v1/jobs/${jobId}`).then(r => r.json()).then(updatedJob => updateJobUI(updatedJob));
+            currentSSE.close();
+          }
+        };
+      }
+    }
+
+    function updateJobUI(job) {
+      document.getElementById('detail-job-status').innerText = job.status;
+      document.getElementById('detail-completed-count').innerText = job.completed_urls || 0;
+      document.getElementById('detail-total-count').innerText = job.total_urls || 0;
+      
+      const pct = job.total_urls > 0 ? Math.round(((job.completed_urls || 0) / job.total_urls) * 100) : 0;
+      document.getElementById('detail-percent-text').innerText = `${pct}%`;
+      document.getElementById('detail-progress-fill').style.width = `${pct}%`;
+
+      document.getElementById('counter-completed').innerText = (job.completed_urls || 0) - ((job.failed_urls || 0) + (job.blocked_urls || 0));
+      document.getElementById('counter-failed').innerText = job.failed_urls || 0;
+      document.getElementById('counter-blocked').innerText = job.blocked_urls || 0;
+      document.getElementById('counter-workers').innerText = job.concurrency || 10;
+
+      currentJobResults = job.results || [];
+      renderResultsTable(currentJobResults);
+    }
+
+    function renderResultsTable(results) {
+      const tbody = document.getElementById('job-results-list');
+      if (!results || results.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500">No results recorded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = results.map((r, idx) => {
+        let statusPill = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Completed</span>`;
+        if (r.status === 'failed') {
+          statusPill = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">Failed</span>`;
+        } else if (r.status === 'blocked') {
+          statusPill = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Blocked</span>`;
+        }
+
+        const httpCode = r.response ? r.response.http_status || '-' : '-';
+        const latency = r.response ? `${r.response.total_time_ms}ms` : '-';
+        const ip = r.target ? r.target.resolved_ip || '-' : '-';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="py-3 px-4 font-mono font-medium text-white truncate max-w-xs">${r.url}</td>
+            <td class="py-3 px-4">${statusPill}</td>
+            <td class="py-3 px-4 font-mono">${httpCode}</td>
+            <td class="py-3 px-4 font-mono text-emerald-400">${latency}</td>
+            <td class="py-3 px-4 font-mono text-slate-400">${ip}</td>
+            <td class="py-3 px-4 text-right">
+              <button onclick="showTargetDetails(${idx})" class="text-xs text-blue-400 hover:text-blue-300">View Details</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function showTargetDetails(index) {
+      const r = currentJobResults[index];
+      if (!r) return;
+
+      document.getElementById('modal-target-url').innerText = r.url;
+      const content = document.getElementById('modal-target-content');
+
+      const diag = r.diagnostics || {};
+      const tls = r.tls || {};
+      const sec = r.security || {};
+
+      content.innerHTML = `
+        <div class="bg-slate-900 p-4 rounded-xl space-y-2 border border-slate-800">
+          <div class="text-slate-400 text-xs uppercase font-bold text-emerald-400">Diagnostics Waterfall</div>
+          <div class="grid grid-cols-4 gap-2 text-center text-xs">
+            <div class="bg-slate-950 p-2 rounded border border-slate-800">
+              <span class="text-slate-400 block">DNS</span>
+              <span class="text-white font-bold">${diag.dns_ms || 0}ms</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded border border-slate-800">
+              <span class="text-slate-400 block">TCP</span>
+              <span class="text-white font-bold">${diag.tcp_ms || 0}ms</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded border border-slate-800">
+              <span class="text-slate-400 block">TLS</span>
+              <span class="text-white font-bold">${diag.tls_ms || 0}ms</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded border border-slate-800">
+              <span class="text-slate-400 block">TTFB</span>
+              <span class="text-white font-bold">${diag.ttfb_ms || 0}ms</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-slate-900 p-4 rounded-xl space-y-1 border border-slate-800">
+            <span class="text-slate-400 block uppercase text-[10px]">Target Spec</span>
+            <div>Hostname: <span class="text-white">${r.target?.hostname || '-'}</span></div>
+            <div>Resolved IP: <span class="text-emerald-400">${r.target?.resolved_ip || '-'}</span></div>
+            <div>Port: <span class="text-white">${r.target?.port || '-'}</span></div>
+            <div>Protocol: <span class="text-white">${r.target?.protocol || '-'}</span></div>
+          </div>
+
+          <div class="bg-slate-900 p-4 rounded-xl space-y-1 border border-slate-800">
+            <span class="text-slate-400 block uppercase text-[10px]">TLS Certificate</span>
+            <div>Version: <span class="text-white">${tls.version || '-'}</span></div>
+            <div>Issuer: <span class="text-white">${tls.issuer || '-'}</span></div>
+            <div>Expiry: <span class="text-slate-400">${tls.expiry || '-'}</span></div>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-xl space-y-1 border border-slate-800">
+          <span class="text-slate-400 block uppercase text-[10px]">Security / Scope Protection</span>
+          <div>SSRF Safe Validated: <span class="text-emerald-400">${sec.ssrf_validated ? 'YES' : 'NO'}</span></div>
+          <div>Scope Authorized: <span class="text-emerald-400">${sec.scope_authorized ? 'YES' : 'NO'}</span></div>
+        </div>
+      `;
+
+      document.getElementById('modal-target-details').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-target-details').classList.add('hidden');
+    }
+
+    async function refreshEgressInfo() {
+      const res = await fetch('/api/v1/egress?refresh=true');
+      const data = await res.json();
+      document.getElementById('egress-ipv4-val').innerText = data.ipv4 || 'Unknown';
+      document.getElementById('egress-endpoint-val').innerText = data.detected_by || 'api.ipify.org';
+    }
+
+    async function runDoctorChecks() {
+      const container = document.getElementById('doctor-checks-container');
+      container.innerHTML = `<div class="text-slate-400">Running diagnostic checks...</div>`;
+
+      const res = await fetch('/api/v1/doctor');
+      const data = await res.json();
+
+      container.innerHTML = data.checks.map(c => `
+        <div class="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-800">
+          <span class="text-slate-300 font-bold">${c.name}</span>
+          <span class="${c.passed ? 'text-emerald-400' : 'text-rose-400'} font-bold">${c.passed ? '✓ PASS' : '✗ FAIL'} (${c.details})</span>
+        </div>
+      `).join('');
+    }
+
+    function downloadJobExport(format) {
+      const jobId = document.getElementById('detail-job-id').innerText;
+      window.location.href = `/api/v1/jobs/${jobId}/export.${format}`;
+    }
+
+    async function cancelActiveJob() {
+      const jobId = document.getElementById('detail-job-id').innerText;
+      await fetch(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST' });
+      alert(`Job ${jobId} cancelled.`);
+    }
+  </script>
+</body>
+</html>

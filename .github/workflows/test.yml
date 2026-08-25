@@ -1,0 +1,26 @@
+name: WebPulse CI/CD Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Unit & SSRF Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Go Unit Tests
+        run: go test -v -race ./pkg/...
+
+      - name: Run Dry Run CLI Check
+        run: go run main.go scan --dry-run urls.json

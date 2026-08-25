@@ -1,0 +1,18 @@
+# Binary outputs
+url-checker
+webpulse
+webpulse-server
+bin/
+
+# Temporary data & export files
+data/
+report.csv
+report.json
+*.db
+*.sqlite
+
+# IDE & System files
+.DS_Store
+.vscode/
+.idea/
+*.log
