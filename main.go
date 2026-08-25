@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/senthilnasa/webpulse/cmd/webpulse/app"
+	"github.com/senthilnasa/webpulse/pkg/cli"
 )
 
 func main() {
-	app.Execute(os.Args)
+	cli.Execute(os.Args)
 }
