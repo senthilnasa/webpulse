@@ -15,7 +15,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/webpulse-server ./cmd/server
 
 # Build WebPulse CLI binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/webpulse ./cmd/webpulse
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/webpulse .
 
 # Stage 2: Final Minimal Runtime Image
 FROM alpine:latest

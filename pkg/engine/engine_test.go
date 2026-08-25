@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,9 +43,12 @@ func TestEngineWorkerPool(t *testing.T) {
 		"http://localhost:9000",
 	}
 
+	var mu sync.Mutex
 	var progressCounts []int
 	onProgress := func(completed, total int, res *TargetResult) {
+		mu.Lock()
 		progressCounts = append(progressCounts, completed)
+		mu.Unlock()
 	}
 
 	results := eng.ExecuteJob(ctx, "job-worker-test", urls, profile, onProgress)
@@ -59,7 +63,11 @@ func TestEngineWorkerPool(t *testing.T) {
 		}
 	}
 
-	if len(progressCounts) != 3 {
-		t.Errorf("Expected 3 progress callbacks, got %d", len(progressCounts))
+	mu.Lock()
+	count := len(progressCounts)
+	mu.Unlock()
+
+	if count != 3 {
+		t.Errorf("Expected 3 progress callbacks, got %d", count)
 	}
 }
