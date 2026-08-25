@@ -104,6 +104,7 @@ type CreateJobRequest struct {
 	HostResolutions     map[string]string `json:"host_resolutions,omitempty"`
 	AllowPrivateTargets bool              `json:"allow_private_targets,omitempty"`
 	HostsFileContent    string            `json:"hosts_file_content,omitempty"`
+	AllowInsecureTLS    bool              `json:"allow_insecure_tls,omitempty"`
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +122,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 				req.Profile = r.FormValue("profile")
 				req.ProjectID = r.FormValue("project_id")
 				req.HostsFileContent = r.FormValue("hosts_file_content")
+				if r.FormValue("allow_insecure_tls") == "true" {
+					req.AllowInsecureTLS = true
+				}
 				file, header, err := r.FormFile("file")
 				if err == nil {
 					defer file.Close()
@@ -167,6 +171,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		}
 		prof.HostResolutions = req.HostResolutions
 		prof.AllowPrivateTargets = req.AllowPrivateTargets
+		prof.AllowInsecure = req.AllowInsecureTLS
 
 		jobRec := &db.JobRecord{
 			ID:            jobID,

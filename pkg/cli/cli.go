@@ -120,7 +120,7 @@ func runScanCommand(args []string) {
 	var profileName, format, outputPath, allowedScope, hostsFilePath string
 	var resolves resolveFlags
 	var workers, timeoutSec int
-	var dryRun, failOnError, allowPrivateTargets bool
+	var dryRun, failOnError, allowPrivateTargets, allowInsecure bool
 
 	fs.StringVar(&profileName, "profile", "standard", "Test profile: quick, standard, comprehensive")
 	fs.StringVar(&profileName, "p", "standard", "Test profile (shorthand)")
@@ -135,6 +135,8 @@ func runScanCommand(args []string) {
 	fs.Var(&resolves, "resolve", "Target IP Override resolution (e.g. krea.edu.in:172.232.121.131)")
 	fs.StringVar(&hostsFilePath, "hosts-file", "", "Path to hosts resolution file")
 	fs.BoolVar(&allowPrivateTargets, "allow-private-targets", false, "Permit testing authorized private/staging targets")
+	fs.BoolVar(&allowInsecure, "insecure", false, "Allow self-signed or untrusted TLS certificates")
+	fs.BoolVar(&allowInsecure, "k", false, "Allow self-signed or untrusted TLS certificates (shorthand)")
 	fs.BoolVar(&dryRun, "dry-run", false, "Perform scope & SSRF validation without dialing targets")
 	fs.BoolVar(&failOnError, "fail-on-error", false, "Exit with code 1 if any target failed or was blocked")
 	fs.StringVar(&allowedScope, "scope", "", "Comma-separated allowed target domain glob patterns")
@@ -217,6 +219,7 @@ func runScanCommand(args []string) {
 	}
 	prof.HostResolutions = hostResolutions
 	prof.AllowPrivateTargets = allowPrivateTargets
+	prof.AllowInsecure = allowInsecure
 
 	var scopePolicy *scope.ScopePolicy
 	if allowedScope != "" {

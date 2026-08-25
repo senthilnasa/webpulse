@@ -220,6 +220,13 @@
               <label class="block text-xs font-medium text-slate-300">Host Mappings (Paste <code class="text-amber-400">172.232.121.131 krea.edu.in</code> or CSV / JSON format)</label>
               <textarea id="input-hosts-mapping" rows="3" placeholder="172.232.121.131 krea.edu.in&#10;10.20.30.40 api.example.com" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"></textarea>
 
+              <div class="flex items-center space-x-2 pt-1">
+                <input type="checkbox" id="check-allow-insecure" class="w-4 h-4 text-emerald-600 bg-slate-950 border-slate-700 rounded focus:ring-emerald-500"/>
+                <label for="check-allow-insecure" class="text-xs text-amber-300 cursor-pointer font-mono">
+                  Allow Self-Signed / Untrusted Staging TLS Certificates (<code class="text-amber-400">--insecure</code>)
+                </label>
+              </div>
+
               <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
                 <div><span class="text-slate-300 font-bold">Connect IP:</span> <code class="text-amber-300">172.232.121.131</code></div>
                 <div><span class="text-slate-300 font-bold">HTTP Host Header:</span> <code class="text-emerald-400">krea.edu.in</code></div>
@@ -594,6 +601,7 @@
 
       const enableOverride = document.getElementById('check-enable-override').checked;
       const hostsText = document.getElementById('input-hosts-mapping').value;
+      const allowInsecure = document.getElementById('check-allow-insecure').checked;
 
       try {
         const res = await fetch('/api/v1/jobs', {
@@ -604,7 +612,8 @@
             profile: profile,
             workers: workers,
             allowed_scopes: allowedScopes,
-            hosts_file_content: enableOverride ? hostsText : ''
+            hosts_file_content: enableOverride ? hostsText : '',
+            allow_insecure_tls: allowInsecure
           })
         });
 
