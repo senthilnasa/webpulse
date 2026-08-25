@@ -42,6 +42,7 @@ func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 		"TLS Handshake (ms)",
 		"HTTP TTFB (ms)",
 		"Redirect Count",
+		"Redirect URLs",
 		"TLS Version",
 		"Cert Issuer",
 		"SSRF Validated",
@@ -57,6 +58,11 @@ func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 		errStr := ""
 		if len(r.Errors) > 0 {
 			errStr = strings.Join(r.Errors, "; ")
+		}
+
+		redirectURLsStr := ""
+		if len(r.Response.Redirects) > 0 {
+			redirectURLsStr = strings.Join(r.Response.Redirects, " -> ")
 		}
 
 		tlsVer, tlsIssuer := "", ""
@@ -85,6 +91,7 @@ func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 			strconv.FormatInt(r.Diagnostics.TLSHandshakeMS, 10),
 			strconv.FormatInt(r.Diagnostics.HTTPTTFBMS, 10),
 			strconv.Itoa(len(r.Response.Redirects)),
+			redirectURLsStr,
 			tlsVer,
 			tlsIssuer,
 			strconv.FormatBool(r.Security.SSRFValidated),
