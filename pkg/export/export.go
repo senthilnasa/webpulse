@@ -17,7 +17,7 @@ func GenerateJSON(results []*engine.TargetResult) ([]byte, error) {
 	return json.MarshalIndent(results, "", "  ")
 }
 
-// GenerateCSV converts target results into CSV byte array.
+// GenerateCSV converts target results into CSV byte array including routing and override columns.
 func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
@@ -30,6 +30,10 @@ func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 		"Response Time (ms)",
 		"Response Size (Bytes)",
 		"Resolved IP",
+		"DNS IP",
+		"Override IP",
+		"Actual Connection IP",
+		"Is Override Active",
 		"Protocol",
 		"Port",
 		"Content Type",
@@ -69,6 +73,10 @@ func GenerateCSV(results []*engine.TargetResult) ([]byte, error) {
 			strconv.FormatInt(r.Response.TotalTimeMS, 10),
 			strconv.FormatInt(r.Response.SizeBytes, 10),
 			r.Target.ResolvedIP,
+			r.Routing.DNSIP,
+			r.Routing.OverrideIP,
+			r.Routing.ActualConnectionIP,
+			strconv.FormatBool(r.Routing.IsOverrideActive),
 			r.Target.Protocol,
 			strconv.Itoa(r.Target.Port),
 			r.Response.ContentType,
@@ -147,6 +155,87 @@ func GenerateZIP(jobID string, profileName string, results []*engine.TargetResul
 	return buf.Bytes(), nil
 }
 
+// ParseHostsFile parses /etc/hosts format, CSV (hostname,ip), or JSON resolutions into map[hostname]ip.
+func ParseHostsFile(content []byte) (map[string]string, error) {
+	resolutions := make(map[string]string)
+
+	// 1. Try JSON map or JSON array
+	var jsonMap map[string]string
+	if err := json.Unmarshal(content, &jsonMap); err == nil && len(jsonMap) > 0 {
+		for k, v := range jsonMap {
+			resolutions[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
+		}
+		return resolutions, nil
+	}
+
+	var jsonArr []map[string]string
+	if err := json.Unmarshal(content, &jsonArr); err == nil && len(jsonArr) > 0 {
+		for _, item := range jsonArr {
+			host := item["hostname"]
+			if host == "" {
+				host = item["host"]
+			}
+			ip := item["ip"]
+			if host != "" && ip != "" {
+				resolutions[strings.ToLower(strings.TrimSpace(host))] = strings.TrimSpace(ip)
+			}
+		}
+		return resolutions, nil
+	}
+
+	// 2. Try CSV format (hostname,ip or ip,hostname)
+	reader := csv.NewReader(bytes.NewReader(content))
+	records, err := reader.ReadAll()
+	if err == nil && len(records) > 0 {
+		startRow := 0
+		hostCol, ipCol := 0, 1
+		firstRow := records[0]
+		if len(firstRow) >= 2 {
+			if strings.ToLower(firstRow[0]) == "hostname" || strings.ToLower(firstRow[0]) == "host" {
+				hostCol, ipCol = 0, 1
+				startRow = 1
+			} else if strings.ToLower(firstRow[0]) == "ip" {
+				ipCol, hostCol = 0, 1
+				startRow = 1
+			}
+		}
+		for i := startRow; i < len(records); i++ {
+			row := records[i]
+			if len(row) >= 2 {
+				h := strings.ToLower(strings.TrimSpace(row[hostCol]))
+				ip := strings.TrimSpace(row[ipCol])
+				if h != "" && ip != "" {
+					resolutions[h] = ip
+				}
+			}
+		}
+		if len(resolutions) > 0 {
+			return resolutions, nil
+		}
+	}
+
+	// 3. Fallback: Standard /etc/hosts format (IP Hostname1 Hostname2 ...)
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) >= 2 {
+			ip := fields[0]
+			for idx := 1; idx < len(fields); idx++ {
+				h := strings.ToLower(fields[idx])
+				if !strings.HasPrefix(h, "#") {
+					resolutions[h] = ip
+				}
+			}
+		}
+	}
+
+	return resolutions, nil
+}
+
 // ReadURLsInput parses a TXT, CSV, or JSON string/reader into a slice of raw URL strings.
 func ReadURLsInput(content []byte, filename string) ([]string, error) {
 	filenameLower := strings.ToLower(filename)
@@ -157,7 +246,6 @@ func ReadURLsInput(content []byte, filename string) ([]string, error) {
 		if err := json.Unmarshal(content, &urls); err == nil {
 			return cleanURLList(urls), nil
 		}
-		// Or JSON array of objects with "url" or "urls" field
 		var objects []map[string]interface{}
 		if err := json.Unmarshal(content, &objects); err == nil {
 			for _, obj := range objects {
@@ -177,7 +265,6 @@ func ReadURLsInput(content []byte, filename string) ([]string, error) {
 		records, err := reader.ReadAll()
 		if err == nil && len(records) > 0 {
 			var urls []string
-			// Find column index named "url" if present
 			urlCol := 0
 			for idx, header := range records[0] {
 				if strings.ToLower(strings.TrimSpace(header)) == "url" {

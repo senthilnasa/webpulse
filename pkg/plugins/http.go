@@ -5,14 +5,16 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
+	"strings"
 	"time"
 
 	"github.com/senthilnasa/webpulse/pkg/ssrf"
 )
 
-// HTTPProbePlugin measures HTTP/HTTPS diagnostic metrics with SSRF dialer protection and httptrace.
+// HTTPProbePlugin measures HTTP/HTTPS diagnostic metrics with SSRF dialer protection and Target IP Overrides.
 type HTTPProbePlugin struct{}
 
 func NewHTTPProbePlugin() *HTTPProbePlugin {
@@ -24,16 +26,23 @@ func (p *HTTPProbePlugin) Name() string {
 }
 
 func (p *HTTPProbePlugin) Description() string {
-	return "Executes HTTP/HTTPS requests and measures DNS, TCP, TLS, and TTFB latencies safely."
+	return "Executes HTTP/HTTPS requests and measures DNS, TCP, TLS, and TTFB latencies safely with Target IP Override support."
 }
 
 func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*PluginResult, error) {
 	parsedURL, err := ssrf.SanitizeURL(target.URL)
-	if err != nil {
+	if err != nil && !target.AllowPrivateTargets {
 		return &PluginResult{
 			PluginName:   p.Name(),
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("SSRF / URL Validation Blocked: %v", err),
+		}, nil
+	}
+	if parsedURL == nil {
+		return &PluginResult{
+			PluginName:   p.Name(),
+			Success:      false,
+			ErrorMessage: "Failed to parse target URL",
 		}, nil
 	}
 
@@ -57,12 +66,38 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 		req.Header.Set(k, v)
 	}
 
+	hostname := parsedURL.Hostname()
+	hostHeader := hostname
+	if parsedURL.Port() != "" {
+		hostHeader = net.JoinHostPort(hostname, parsedURL.Port())
+	}
+
+	// 1. Perform parallel standard DNS resolution for routing comparison (dns_ip vs override_ip)
+	var dnsIP string
+	dnsCtx, cancelDNS := context.WithTimeout(ctx, 3*time.Second)
+	addrs, errDNS := net.DefaultResolver.LookupHost(dnsCtx, hostname)
+	cancelDNS()
+	if errDNS == nil && len(addrs) > 0 {
+		dnsIP = addrs[0]
+	}
+
+	// 2. Check for active Target IP Override
+	var overrideIP string
+	isOverrideActive := false
+	if len(target.HostResolutions) > 0 {
+		hostLower := strings.ToLower(strings.TrimSpace(hostname))
+		if ovIP, ok := target.HostResolutions[hostLower]; ok && ovIP != "" {
+			overrideIP = ovIP
+			isOverrideActive = true
+		}
+	}
+
 	var (
 		dnsStart, dnsDone   time.Time
 		tcpStart, tcpDone   time.Time
 		tlsStart, tlsDone   time.Time
 		reqStart, firstByte time.Time
-		resolvedIP          string
+		actualConnIP        string
 		redirects           []string
 		tlsState            *tls.ConnectionState
 	)
@@ -72,11 +107,16 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 		DNSDone: func(info httptrace.DNSDoneInfo) {
 			dnsDone = time.Now()
 			if len(info.Addrs) > 0 {
-				resolvedIP = info.Addrs[0].String()
+				actualConnIP = info.Addrs[0].String()
 			}
 		},
 		ConnectStart: func(_, _ string) { tcpStart = time.Now() },
-		ConnectDone: func(_, _ string, _ error) { tcpDone = time.Now() },
+		ConnectDone: func(_, addr string, _ error) {
+			tcpDone = time.Now()
+			if h, _, err := net.SplitHostPort(addr); err == nil {
+				actualConnIP = h
+			}
+		},
 		TLSHandshakeStart: func() { tlsStart = time.Now() },
 		TLSHandshakeDone: func(state tls.ConnectionState, _ error) {
 			tlsDone = time.Now()
@@ -87,7 +127,13 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
-	client := ssrf.NewHTTPClient(target.Timeout, target.MaxRedirects, target.AllowInsecureTLS)
+	client := ssrf.NewHTTPClientWithResolutions(
+		target.Timeout,
+		target.MaxRedirects,
+		target.AllowInsecureTLS,
+		target.HostResolutions,
+		target.AllowPrivateTargets,
+	)
 
 	// Wrap redirect logic to collect redirect URLs
 	origRedirect := client.CheckRedirect
@@ -109,9 +155,27 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 		Redirects:      redirects,
 	}
 
+	if isOverrideActive {
+		actualConnIP = overrideIP
+	} else if actualConnIP == "" && dnsIP != "" {
+		actualConnIP = dnsIP
+	}
+
+	// Populate Routing Result
+	result.Routing = RoutingResult{
+		Hostname:           hostname,
+		DNSIP:              dnsIP,
+		OverrideIP:         overrideIP,
+		ActualConnectionIP: actualConnIP,
+		HostHeader:         hostHeader,
+		TLSSNI:             hostname,
+		IsOverrideActive:   isOverrideActive,
+	}
+
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+		result.ResolvedIP = actualConnIP
 		return result, nil
 	}
 	defer resp.Body.Close()
@@ -124,7 +188,7 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 	result.StatusText = resp.Status
 	result.ResponseSizeBytes = int64(len(bodyBytes))
 	result.ContentType = resp.Header.Get("Content-Type")
-	result.ResolvedIP = resolvedIP
+	result.ResolvedIP = actualConnIP
 
 	// Headers
 	respHeaders := make(map[string]string)
@@ -163,7 +227,9 @@ func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*Plu
 	}
 	if tlsState != nil {
 		tlsInfo := &TLSInfo{
-			Version: tlsVersionName(tlsState.Version),
+			Version:          tlsVersionName(tlsState.Version),
+			SNI:              hostname,
+			ValidationStatus: "Valid",
 		}
 		if len(tlsState.PeerCertificates) > 0 {
 			cert := tlsState.PeerCertificates[0]

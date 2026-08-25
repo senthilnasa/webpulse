@@ -95,12 +95,15 @@ func (s *Server) handleEgress(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateJobRequest struct {
-	ProjectID     string   `json:"project_id"`
-	URLs          []string `json:"urls"`
-	Profile       string   `json:"profile"`
-	Workers       int      `json:"workers"`
-	TimeoutSec    int      `json:"timeout_sec"`
-	AllowedScopes []string `json:"allowed_scopes"`
+	ProjectID           string            `json:"project_id"`
+	URLs                []string          `json:"urls"`
+	Profile             string            `json:"profile"`
+	Workers             int               `json:"workers"`
+	TimeoutSec          int               `json:"timeout_sec"`
+	AllowedScopes       []string          `json:"allowed_scopes"`
+	HostResolutions     map[string]string `json:"host_resolutions,omitempty"`
+	AllowPrivateTargets bool              `json:"allow_private_targets,omitempty"`
+	HostsFileContent    string            `json:"hosts_file_content,omitempty"`
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +120,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			if err := r.ParseMultipartForm(10 * 1024 * 1024); err == nil {
 				req.Profile = r.FormValue("profile")
 				req.ProjectID = r.FormValue("project_id")
+				req.HostsFileContent = r.FormValue("hosts_file_content")
 				file, header, err := r.FormFile("file")
 				if err == nil {
 					defer file.Close()
@@ -141,6 +145,18 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			req.Profile = "standard"
 		}
 
+		if req.HostResolutions == nil {
+			req.HostResolutions = make(map[string]string)
+		}
+		if req.HostsFileContent != "" {
+			parsed, err := export.ParseHostsFile([]byte(req.HostsFileContent))
+			if err == nil {
+				for k, v := range parsed {
+					req.HostResolutions[k] = v
+				}
+			}
+		}
+
 		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
 		prof := engine.DefaultProfile(req.Profile)
 		if req.Workers > 0 {
@@ -149,6 +165,8 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		if req.TimeoutSec > 0 {
 			prof.Timeout = time.Duration(req.TimeoutSec) * time.Second
 		}
+		prof.HostResolutions = req.HostResolutions
+		prof.AllowPrivateTargets = req.AllowPrivateTargets
 
 		jobRec := &db.JobRecord{
 			ID:            jobID,

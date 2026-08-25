@@ -16,15 +16,17 @@ import (
 
 // ProfileConfig represents a pre-configured execution profile (Quick, Standard, Comprehensive).
 type ProfileConfig struct {
-	Name            string            `json:"name"`
-	Timeout         time.Duration     `json:"timeout"`
-	Workers         int               `json:"workers"`
-	Retries         int               `json:"retries"`
-	MaxRedirects    int               `json:"max_redirects"`
-	UserAgent       string            `json:"user_agent"`
-	Headers         map[string]string `json:"headers"`
-	AllowInsecure   bool              `json:"allow_insecure"`
-	RPSLimit        int               `json:"rps_limit"`
+	Name                string            `json:"name"`
+	Timeout             time.Duration     `json:"timeout"`
+	Workers             int               `json:"workers"`
+	Retries             int               `json:"retries"`
+	MaxRedirects        int               `json:"max_redirects"`
+	UserAgent           string            `json:"user_agent"`
+	Headers             map[string]string `json:"headers"`
+	AllowInsecure       bool              `json:"allow_insecure"`
+	RPSLimit            int               `json:"rps_limit"`
+	HostResolutions     map[string]string `json:"host_resolutions,omitempty"`     // Target IP Overrides (hostname -> override_ip)
+	AllowPrivateTargets bool              `json:"allow_private_targets,omitempty"` // Authorized private network testing policy
 }
 
 func DefaultProfile(name string) ProfileConfig {
@@ -71,6 +73,7 @@ type TargetResult struct {
 	Response      ResponseMeta           `json:"response"`
 	Diagnostics   plugins.DiagnosticsResult `json:"diagnostics"`
 	TLS           *plugins.TLSInfo       `json:"tls,omitempty"`
+	Routing       plugins.RoutingResult  `json:"routing"`
 	Security      SecurityMeta           `json:"security"`
 	Errors        []string               `json:"errors,omitempty"`
 }
@@ -140,7 +143,7 @@ func (e *DiagnosticEngine) ExecuteJob(ctx context.Context, jobID string, urls []
 	total := len(urls)
 	results := make([]*TargetResult, total)
 	urlChan := make(chan struct {
-		index int
+		index  int
 		rawURL string
 	}, total)
 
@@ -250,7 +253,7 @@ func (e *DiagnosticEngine) ProbeSingleURL(ctx context.Context, jobID string, raw
 	}
 
 	// 2. Hostname SSRF Check
-	if ssrf.IsHostnameRestricted(u.Hostname()) {
+	if ssrf.IsHostnameRestricted(u.Hostname()) && !profile.AllowPrivateTargets {
 		res.Status = "blocked"
 		res.Security.SSRFValidated = false
 		res.Security.IsPrivateIP = true
@@ -260,13 +263,15 @@ func (e *DiagnosticEngine) ProbeSingleURL(ctx context.Context, jobID string, raw
 
 	// 3. Diagnostic Probe Execution
 	targetSpec := &plugins.TargetSpec{
-		URL:              rawURL,
-		Method:           "GET",
-		UserAgent:        profile.UserAgent,
-		Timeout:          profile.Timeout,
-		AllowInsecureTLS: profile.AllowInsecure,
-		MaxRedirects:     profile.MaxRedirects,
-		Headers:          profile.Headers,
+		URL:                 rawURL,
+		Method:              "GET",
+		UserAgent:           profile.UserAgent,
+		Timeout:             profile.Timeout,
+		AllowInsecureTLS:    profile.AllowInsecure,
+		MaxRedirects:        profile.MaxRedirects,
+		Headers:             profile.Headers,
+		HostResolutions:     profile.HostResolutions,
+		AllowPrivateTargets: profile.AllowPrivateTargets,
 	}
 
 	var pRes *plugins.PluginResult
@@ -292,6 +297,7 @@ func (e *DiagnosticEngine) ProbeSingleURL(ctx context.Context, jobID string, raw
 		}
 		res.Diagnostics = pRes.Diagnostics
 		res.TLS = pRes.TLS
+		res.Routing = pRes.Routing
 
 		if !pRes.Success {
 			res.Status = "failed"

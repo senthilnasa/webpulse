@@ -62,17 +62,20 @@ Commands:
   version  Display WebPulse CLI version and egress IP info
 
 Flags for scan:
-  -p, --profile     Test profile: quick, standard, comprehensive (default "standard")
-  -w, --workers     Number of concurrent worker goroutines
-  -t, --timeout     Timeout per HTTP request in seconds
-  -f, --format      Output format: table, json, csv (default "table")
-  -o, --output      Output file path (e.g. results.json or results.csv)
-  --dry-run         Perform scope & SSRF validation without dialing targets
-  --fail-on-error   Exit with code 1 if any target failed or was blocked
+  -p, --profile           Test profile: quick, standard, comprehensive (default "standard")
+  -w, --workers           Number of concurrent worker goroutines
+  -t, --timeout           Timeout per HTTP request in seconds
+  -f, --format            Output format: table, json, csv (default "table")
+  -o, --output            Output file path (e.g. results.json or results.csv)
+  --resolve               Target IP override (e.g. krea.edu.in:172.232.121.131 or 172.232.121.131:krea.edu.in)
+  --hosts-file            Path to hosts resolution file (/etc/hosts, CSV, JSON)
+  --allow-private-targets Permit testing authorized private/staging IP ranges (requires explicit policy)
+  --dry-run               Perform scope & SSRF validation without dialing targets
+  --fail-on-error         Exit with code 1 if any target failed or was blocked
 
 Examples:
-  webpulse scan https://example.com
-  webpulse scan urls.txt --profile standard --workers 10
+  webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131
+  webpulse scan urls.txt --hosts-file ./hosts.test --workers 10
   webpulse scan urls.csv --format csv --output report.csv
   webpulse scan urls.json --dry-run
   webpulse doctor`)
@@ -100,12 +103,24 @@ func runDoctorCommand() {
 	}
 }
 
+type resolveFlags []string
+
+func (r *resolveFlags) String() string {
+	return strings.Join(*r, ",")
+}
+
+func (r *resolveFlags) Set(value string) error {
+	*r = append(*r, value)
+	return nil
+}
+
 func runScanCommand(args []string) {
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 
-	var profileName, format, outputPath, allowedScope string
+	var profileName, format, outputPath, allowedScope, hostsFilePath string
+	var resolves resolveFlags
 	var workers, timeoutSec int
-	var dryRun, failOnError bool
+	var dryRun, failOnError, allowPrivateTargets bool
 
 	fs.StringVar(&profileName, "profile", "standard", "Test profile: quick, standard, comprehensive")
 	fs.StringVar(&profileName, "p", "standard", "Test profile (shorthand)")
@@ -117,6 +132,9 @@ func runScanCommand(args []string) {
 	fs.StringVar(&format, "f", "table", "Output format (shorthand)")
 	fs.StringVar(&outputPath, "output", "", "Output file path")
 	fs.StringVar(&outputPath, "o", "", "Output file path (shorthand)")
+	fs.Var(&resolves, "resolve", "Target IP Override resolution (e.g. krea.edu.in:172.232.121.131)")
+	fs.StringVar(&hostsFilePath, "hosts-file", "", "Path to hosts resolution file")
+	fs.BoolVar(&allowPrivateTargets, "allow-private-targets", false, "Permit testing authorized private/staging targets")
 	fs.BoolVar(&dryRun, "dry-run", false, "Perform scope & SSRF validation without dialing targets")
 	fs.BoolVar(&failOnError, "fail-on-error", false, "Exit with code 1 if any target failed or was blocked")
 	fs.StringVar(&allowedScope, "scope", "", "Comma-separated allowed target domain glob patterns")
@@ -128,7 +146,7 @@ func runScanCommand(args []string) {
 	targetInput := fs.Arg(0)
 	if targetInput == "" {
 		fmt.Println("Error: Target URL or input file path is required.")
-		fmt.Println("Example: webpulse scan https://example.com or webpulse scan urls.txt")
+		fmt.Println("Example: webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131")
 		os.Exit(2)
 	}
 
@@ -155,7 +173,41 @@ func runScanCommand(args []string) {
 		os.Exit(2)
 	}
 
-	// 2. Build Profile & Scope Policy
+	// 2. Build Target IP Overrides map
+	hostResolutions := make(map[string]string)
+
+	if hostsFilePath != "" {
+		content, err := os.ReadFile(hostsFilePath)
+		if err != nil {
+			fmt.Printf("Error reading hosts file '%s': %v\n", hostsFilePath, err)
+			os.Exit(2)
+		}
+		parsedMap, err := export.ParseHostsFile(content)
+		if err != nil {
+			fmt.Printf("Error parsing hosts file '%s': %v\n", hostsFilePath, err)
+			os.Exit(2)
+		}
+		for k, v := range parsedMap {
+			hostResolutions[k] = v
+		}
+	}
+
+	for _, item := range resolves {
+		parts := strings.Split(item, ":")
+		if len(parts) == 2 {
+			p1, p2 := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			if ssrf.IsIPRestricted(nil) { // check string format
+			}
+			// Support both hostname:ip and ip:hostname
+			if strings.Count(p1, ".") == 3 && strings.Count(p2, ".") != 3 { // ip:hostname
+				hostResolutions[strings.ToLower(p2)] = p1
+			} else { // hostname:ip
+				hostResolutions[strings.ToLower(p1)] = p2
+			}
+		}
+	}
+
+	// 3. Build Profile & Scope Policy
 	prof := engine.DefaultProfile(profileName)
 	if workers > 0 {
 		prof.Workers = workers
@@ -163,6 +215,8 @@ func runScanCommand(args []string) {
 	if timeoutSec > 0 {
 		prof.Timeout = time.Duration(timeoutSec) * time.Second
 	}
+	prof.HostResolutions = hostResolutions
+	prof.AllowPrivateTargets = allowPrivateTargets
 
 	var scopePolicy *scope.ScopePolicy
 	if allowedScope != "" {
@@ -175,10 +229,16 @@ func runScanCommand(args []string) {
 	defer cancel()
 
 	fmt.Printf("\nWebPulse Scan | Targets: %d | Profile: %s | Workers: %d\n", len(urls), prof.Name, prof.Workers)
+	if len(hostResolutions) > 0 {
+		fmt.Println("⚠ TARGET IP OVERRIDE ACTIVE:")
+		for h, ip := range hostResolutions {
+			fmt.Printf("   %-30s → %s (Host: %s | SNI: %s)\n", h, ip, h, h)
+		}
+	}
 	fmt.Println("Only test systems you own or have explicit authorization to test.")
 	fmt.Println("─────────────────────────────────────────────────────────────────")
 
-	// 3. Dry Run Execution
+	// 4. Dry Run Execution
 	if dryRun {
 		fmt.Println("[DRY RUN MODE] Validating Scope & SSRF defenses...")
 		hasFailures := false
@@ -186,7 +246,7 @@ func runScanCommand(args []string) {
 			sanitized, err := ssrf.SanitizeURL(u)
 			status := "PASS"
 			reason := "Target URL valid"
-			if err != nil {
+			if err != nil && !allowPrivateTargets {
 				status = "BLOCKED"
 				reason = err.Error()
 				hasFailures = true
@@ -209,14 +269,14 @@ func runScanCommand(args []string) {
 		os.Exit(0)
 	}
 
-	// 4. Perform Diagnostic Scan
+	// 5. Perform Diagnostic Scan
 	jobID := fmt.Sprintf("job-%d", time.Now().Unix())
 	startTime := time.Now()
 
 	results := eng.ExecuteJob(ctx, jobID, urls, prof, nil)
 	duration := time.Since(startTime)
 
-	// 5. Output Formatting & Save
+	// 6. Output Formatting & Save
 	hasFailures := false
 	completedCount, failedCount, blockedCount := 0, 0, 0
 
@@ -270,8 +330,8 @@ func runScanCommand(args []string) {
 }
 
 func printTerminalResults(results []*engine.TargetResult, duration time.Duration, completed, failed, blocked int) {
-	fmt.Printf("\n%-40s %-8s %-8s %-12s %-15s\n", "TARGET URL", "STATUS", "HTTP", "LATENCY", "RESOLVED IP")
-	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────────────")
+	fmt.Printf("\n%-40s %-8s %-8s %-12s %-15s %-10s\n", "TARGET URL", "STATUS", "HTTP", "LATENCY", "CONNECTED IP", "OVERRIDE")
+	fmt.Println("───────────────────────────────────────────────────────────────────────────────────────────────────")
 
 	for _, r := range results {
 		statusPill := r.Status
@@ -288,15 +348,20 @@ func printTerminalResults(results []*engine.TargetResult, duration time.Duration
 			ipPill = "-"
 		}
 
+		overridePill := "No"
+		if r.Routing.IsOverrideActive {
+			overridePill = "YES"
+		}
+
 		targetDisp := r.URL
 		if len(targetDisp) > 38 {
 			targetDisp = targetDisp[:35] + "..."
 		}
 
-		fmt.Printf("%-40s %-8s %-8s %-12s %-15s\n", targetDisp, statusPill, httpPill, latencyPill, ipPill)
+		fmt.Printf("%-40s %-8s %-8s %-12s %-15s %-10s\n", targetDisp, statusPill, httpPill, latencyPill, ipPill, overridePill)
 	}
 
-	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────────────")
+	fmt.Println("───────────────────────────────────────────────────────────────────────────────────────────────────")
 	fmt.Printf("Scan Finished in %v | Total: %d | Completed: %d | Failed: %d | Blocked: %d\n",
 		duration.Round(time.Millisecond), len(results), completed, failed, blocked)
 }

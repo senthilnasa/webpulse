@@ -119,13 +119,33 @@ func TestSafeDialerValidation(t *testing.T) {
 	dialer := NewSafeDialer(2 * time.Second)
 	ctx := context.Background()
 
-	_, _, err := dialer.ValidateDestination(ctx, "127.0.0.1")
+	_, _, _, err := dialer.ValidateDestination(ctx, "127.0.0.1")
 	if err == nil {
 		t.Error("Expected 127.0.0.1 validation to fail with SSRF error")
 	}
 
-	_, _, err = dialer.ValidateDestination(ctx, "169.254.169.254")
+	_, _, _, err = dialer.ValidateDestination(ctx, "169.254.169.254")
 	if err == nil {
 		t.Error("Expected metadata IP validation to fail with SSRF error")
+	}
+}
+
+func TestTargetIPOverrideValidation(t *testing.T) {
+	dialer := NewSafeDialer(2 * time.Second)
+	dialer.HostResolutions["krea.edu.in"] = "172.232.121.131"
+	ctx := context.Background()
+
+	ip, host, isOverride, err := dialer.ValidateDestination(ctx, "krea.edu.in")
+	if err != nil {
+		t.Fatalf("Unexpected error for target IP override: %v", err)
+	}
+	if !isOverride {
+		t.Error("Expected isOverride to be true")
+	}
+	if ip.String() != "172.232.121.131" {
+		t.Errorf("Expected IP 172.232.121.131, got %s", ip.String())
+	}
+	if host != "krea.edu.in" {
+		t.Errorf("Expected host krea.edu.in, got %s", host)
 	}
 }

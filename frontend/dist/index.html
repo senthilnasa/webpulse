@@ -163,7 +163,7 @@
       <div class="max-w-3xl mx-auto space-y-6">
         <div>
           <h1 class="text-2xl font-bold text-white">Create Diagnostic Job</h1>
-          <p class="text-slate-400 text-sm">Configure target URLs, profile, and authorization scope rules</p>
+          <p class="text-slate-400 text-sm">Configure target URLs, Target IP Overrides, profile, and scope rules</p>
         </div>
 
         <div class="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
@@ -177,10 +177,20 @@
             </div>
           </div>
 
+          <!-- Target Environment Selector -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Target Environment</label>
+            <select id="select-environment" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-emerald-500">
+              <option value="production">Production (Default Public DNS & Network)</option>
+              <option value="staging">Staging / Pre-Production</option>
+              <option value="migration">Server Migration / QA Cutover</option>
+            </select>
+          </div>
+
           <!-- URL Input -->
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">Target URLs (Paste multiple or upload TXT/CSV/JSON)</label>
-            <textarea id="input-urls" rows="6" placeholder="https://example.com&#10;https://example.org&#10;https://api.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"></textarea>
+            <textarea id="input-urls" rows="5" placeholder="https://krea.edu.in&#10;https://api.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"></textarea>
           </div>
 
           <!-- File Upload Drag & Drop -->
@@ -188,6 +198,34 @@
             <i class="fa-solid fa-cloud-arrow-up text-slate-400 text-2xl mb-2"></i>
             <p class="text-xs text-slate-300 font-medium">Click to upload <code class="text-emerald-400">urls.txt</code>, <code class="text-emerald-400">urls.csv</code>, or <code class="text-emerald-400">urls.json</code></p>
             <input type="file" id="file-upload-input" class="hidden" accept=".txt,.csv,.json" onchange="handleFileUpload(event)"/>
+          </div>
+
+          <!-- TARGET IP OVERRIDE / HOST MAPPING SECTION -->
+          <div class="border border-slate-800 bg-slate-900/50 p-4 rounded-xl space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <input type="checkbox" id="check-enable-override" onchange="toggleOverridePanel()" class="w-4 h-4 text-emerald-600 bg-slate-900 border-slate-700 rounded focus:ring-emerald-500"/>
+                <label for="check-enable-override" class="text-sm font-bold text-white cursor-pointer flex items-center">
+                  <i class="fa-solid fa-route mr-1.5 text-amber-400"></i>Use Target IP Override / Host Mapping
+                </label>
+              </div>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded">Advanced</span>
+            </div>
+
+            <p class="text-xs text-slate-400">
+              Connect to a specific server IP while preserving the target domain name for <strong>HTTP Host header</strong> and <strong>TLS SNI</strong> (e.g. testing staging server before public DNS cutover).
+            </p>
+
+            <div id="override-input-panel" class="space-y-3 hidden pt-2">
+              <label class="block text-xs font-medium text-slate-300">Host Mappings (Paste <code class="text-amber-400">172.232.121.131 krea.edu.in</code> or CSV / JSON format)</label>
+              <textarea id="input-hosts-mapping" rows="3" placeholder="172.232.121.131 krea.edu.in&#10;10.20.30.40 api.example.com" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"></textarea>
+
+              <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <div><span class="text-slate-300 font-bold">Connect IP:</span> <code class="text-amber-300">172.232.121.131</code></div>
+                <div><span class="text-slate-300 font-bold">HTTP Host Header:</span> <code class="text-emerald-400">krea.edu.in</code></div>
+                <div><span class="text-slate-300 font-bold">TLS SNI:</span> <code class="text-emerald-400">krea.edu.in</code></div>
+              </div>
+            </div>
           </div>
 
           <!-- Test Profile & Concurrency -->
@@ -217,7 +255,7 @@
           <div class="flex items-center space-x-3 pt-2">
             <input type="checkbox" id="check-auth-confirm" class="w-4 h-4 text-emerald-600 bg-slate-900 border-slate-700 rounded focus:ring-emerald-500"/>
             <label for="check-auth-confirm" class="text-xs text-slate-300 cursor-pointer">
-              I confirm that I own or have explicit written authorization to test all provided target URLs.
+              I confirm that I own or have explicit written authorization to test all provided target URLs and destination IPs.
             </label>
           </div>
 
@@ -243,6 +281,7 @@
           <div class="flex items-center space-x-3">
             <h1 id="detail-job-id" class="text-2xl font-bold text-white font-mono">Job #...</h1>
             <span id="detail-job-status" class="px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30">Running</span>
+            <span id="detail-override-badge" class="px-3 py-1 rounded-full text-xs font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 hidden">⚠ IP Override Active</span>
           </div>
           <p class="text-slate-400 text-sm mt-1">Real-time diagnostic probe telemetry and target breakdown</p>
         </div>
@@ -291,12 +330,13 @@
                 <th class="py-3 px-4">Status</th>
                 <th class="py-3 px-4">HTTP</th>
                 <th class="py-3 px-4">Latency</th>
-                <th class="py-3 px-4">Resolved IP</th>
+                <th class="py-3 px-4">Connection IP</th>
+                <th class="py-3 px-4">Override</th>
                 <th class="py-3 px-4 text-right">Details</th>
               </tr>
             </thead>
             <tbody id="job-results-list" class="divide-y divide-slate-800/60">
-              <tr><td colspan="6" class="py-8 text-center text-slate-500">Waiting for probe execution...</td></tr>
+              <tr><td colspan="7" class="py-8 text-center text-slate-500">Waiting for probe execution...</td></tr>
             </tbody>
           </table>
         </div>
@@ -419,6 +459,16 @@
       loadDashboardJobs();
     });
 
+    function toggleOverridePanel() {
+      const enabled = document.getElementById('check-enable-override').checked;
+      const panel = document.getElementById('override-input-panel');
+      if (enabled) {
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+    }
+
     function navigateTo(pageId) {
       document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
       document.querySelectorAll('.nav-btn').forEach(el => {
@@ -527,7 +577,7 @@
       const authConfirm = document.getElementById('check-auth-confirm').checked;
 
       if (!authConfirm) {
-        alert('Please confirm that you have explicit written authorization to test the provided URLs.');
+        alert('Please confirm that you have explicit written authorization to test the provided URLs and destination IPs.');
         return;
       }
 
@@ -542,6 +592,9 @@
       const scopeText = document.getElementById('input-scope').value;
       const allowedScopes = scopeText ? scopeText.split(',').map(s => s.trim()).filter(Boolean) : [];
 
+      const enableOverride = document.getElementById('check-enable-override').checked;
+      const hostsText = document.getElementById('input-hosts-mapping').value;
+
       try {
         const res = await fetch('/api/v1/jobs', {
           method: 'POST',
@@ -550,7 +603,8 @@
             urls: urls,
             profile: profile,
             workers: workers,
-            allowed_scopes: allowedScopes
+            allowed_scopes: allowedScopes,
+            hosts_file_content: enableOverride ? hostsText : ''
           })
         });
 
@@ -594,7 +648,6 @@
       navigateTo('job-detail');
       document.getElementById('detail-job-id').innerText = jobId;
 
-      // Close previous SSE stream if any
       if (currentSSE) {
         currentSSE.close();
         currentSSE = null;
@@ -634,13 +687,24 @@
       document.getElementById('counter-workers').innerText = job.concurrency || 10;
 
       currentJobResults = job.results || [];
+
+      let hasOverride = false;
+      if (currentJobResults.some(r => r.routing && r.routing.is_override_active)) {
+        hasOverride = true;
+      }
+      if (hasOverride) {
+        document.getElementById('detail-override-badge').classList.remove('hidden');
+      } else {
+        document.getElementById('detail-override-badge').classList.add('hidden');
+      }
+
       renderResultsTable(currentJobResults);
     }
 
     function renderResultsTable(results) {
       const tbody = document.getElementById('job-results-list');
       if (!results || results.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500">No results recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No results recorded yet.</td></tr>`;
         return;
       }
 
@@ -655,6 +719,10 @@
         const httpCode = r.response ? r.response.http_status || '-' : '-';
         const latency = r.response ? `${r.response.total_time_ms}ms` : '-';
         const ip = r.target ? r.target.resolved_ip || '-' : '-';
+        const isOverride = r.routing && r.routing.is_override_active;
+        const overridePill = isOverride 
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">YES</span>`
+          : `<span class="text-slate-500">No</span>`;
 
         return `
           <tr class="hover:bg-slate-800/30 transition">
@@ -663,6 +731,7 @@
             <td class="py-3 px-4 font-mono">${httpCode}</td>
             <td class="py-3 px-4 font-mono text-emerald-400">${latency}</td>
             <td class="py-3 px-4 font-mono text-slate-400">${ip}</td>
+            <td class="py-3 px-4 font-mono">${overridePill}</td>
             <td class="py-3 px-4 text-right">
               <button onclick="showTargetDetails(${idx})" class="text-xs text-blue-400 hover:text-blue-300">View Details</button>
             </td>
@@ -681,8 +750,29 @@
       const diag = r.diagnostics || {};
       const tls = r.tls || {};
       const sec = r.security || {};
+      const rt = r.routing || {};
 
       content.innerHTML = `
+        ${rt.is_override_active ? `
+          <div class="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl flex items-center justify-between text-amber-300 text-xs">
+            <span><i class="fa-solid fa-route mr-1.5"></i><strong>Target IP Override Active</strong></span>
+            <span class="font-mono text-amber-400">${rt.override_ip}</span>
+          </div>
+        ` : ''}
+
+        <!-- Target Routing Table -->
+        <div class="bg-slate-900 p-4 rounded-xl space-y-2 border border-slate-800">
+          <div class="text-slate-400 text-xs uppercase font-bold text-amber-400">Target Routing & Host Mapping</div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>Hostname: <span class="text-white font-bold">${rt.hostname || r.target?.hostname || '-'}</span></div>
+            <div>Normal DNS IP: <span class="text-slate-400">${rt.dns_ip || '-'}</span></div>
+            <div>Override IP: <span class="text-amber-400 font-bold">${rt.override_ip || 'None'}</span></div>
+            <div>Actual Connection: <span class="text-emerald-400 font-bold">${rt.actual_connection_ip || r.target?.resolved_ip || '-'}</span></div>
+            <div>HTTP Host Header: <span class="text-emerald-400 font-bold">${rt.host_header || r.target?.hostname || '-'}</span></div>
+            <div>TLS SNI: <span class="text-emerald-400 font-bold">${rt.tls_sni || r.target?.hostname || '-'}</span></div>
+          </div>
+        </div>
+
         <div class="bg-slate-900 p-4 rounded-xl space-y-2 border border-slate-800">
           <div class="text-slate-400 text-xs uppercase font-bold text-emerald-400">Diagnostics Waterfall</div>
           <div class="grid grid-cols-4 gap-2 text-center text-xs">
