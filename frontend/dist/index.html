@@ -802,9 +802,26 @@
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">YES</span>`
           : `<span class="text-slate-500">No</span>`;
 
+        const hasErrors = r.errors && r.errors.length > 0;
+        const hasRedirects = r.response && r.response.redirects && r.response.redirects.length > 0;
+
         return `
           <tr class="hover:bg-slate-800/30 transition">
-            <td class="py-3 px-4 font-mono text-xs text-slate-100 font-medium break-all select-all max-w-md">${r.url}</td>
+            <td class="py-3 px-4 font-mono text-xs text-slate-100 font-medium break-all select-all max-w-lg">
+              <div>${r.url}</div>
+              ${hasErrors ? `
+                <div class="mt-1.5 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 px-2.5 py-1 rounded-lg font-mono break-all flex items-start space-x-1.5">
+                  <i class="fa-solid fa-circle-exclamation text-rose-400 mt-0.5 shrink-0"></i>
+                  <span>${r.errors.join('; ')}</span>
+                </div>
+              ` : ''}
+              ${hasRedirects ? `
+                <div class="mt-1.5 text-[11px] text-blue-300 bg-blue-500/10 border border-blue-500/30 px-2.5 py-1 rounded-lg font-mono break-all flex items-center space-x-1.5">
+                  <i class="fa-solid fa-arrow-right-arrow-left text-blue-400 shrink-0"></i>
+                  <span>Redirect (${r.response.redirects.length}): ${r.response.redirects.join(' → ')}</span>
+                </div>
+              ` : ''}
+            </td>
             <td class="py-3 px-4">${statusPill}</td>
             <td class="py-3 px-4 font-mono">${httpCode}</td>
             <td class="py-3 px-4 font-mono text-emerald-400">${latency}</td>
@@ -829,8 +846,31 @@
       const tls = r.tls || {};
       const sec = r.security || {};
       const rt = r.routing || {};
+      const hasErrors = r.errors && r.errors.length > 0;
+      const hasRedirects = r.response && r.response.redirects && r.response.redirects.length > 0;
 
       content.innerHTML = `
+        ${hasErrors ? `
+          <div class="bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl space-y-1 text-xs">
+            <span class="text-rose-400 font-bold uppercase block flex items-center">
+              <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Error Diagnostic Details
+            </span>
+            <div class="text-rose-200 font-mono break-all leading-relaxed">${r.errors.join('<br/>')}</div>
+          </div>
+        ` : ''}
+
+        ${hasRedirects ? `
+          <div class="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl space-y-2 text-xs">
+            <span class="text-blue-400 font-bold uppercase block flex items-center">
+              <i class="fa-solid fa-arrow-right-arrow-left mr-1.5"></i>Redirect Hop Chain (${r.response.redirects.length})
+            </span>
+            <div class="font-mono text-blue-200 space-y-1">
+              <div class="text-slate-300">1. ${r.url}</div>
+              ${r.response.redirects.map((rd, i) => `<div class="pl-4 text-emerald-400">↳ ${i + 2}. ${rd}</div>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
         ${rt.is_override_active ? `
           <div class="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl flex items-center justify-between text-amber-300 text-xs">
             <span><i class="fa-solid fa-route mr-1.5"></i><strong>Target IP Override Active</strong></span>
@@ -895,9 +935,60 @@
           <div>SSRF Safe Validated: <span class="text-emerald-400">${sec.ssrf_validated ? 'YES' : 'NO'}</span></div>
           <div>Scope Authorized: <span class="text-emerald-400">${sec.scope_authorized ? 'YES' : 'NO'}</span></div>
         </div>
+
+        <!-- Download Single Target Report Section -->
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2 pt-3">
+          <span class="text-slate-400 text-xs font-bold uppercase block">Download Single Target Report</span>
+          <div class="flex items-center space-x-3">
+            <button onclick="downloadSingleTargetReport(${index}, 'json')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow">
+              <i class="fa-solid fa-download"></i><span>JSON Report</span>
+            </button>
+            <button onclick="downloadSingleTargetReport(${index}, 'csv')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center space-x-1.5">
+              <i class="fa-solid fa-file-csv"></i><span>CSV Report</span>
+            </button>
+          </div>
+        </div>
       `;
 
       document.getElementById('modal-target-details').classList.remove('hidden');
+    }
+
+    function downloadSingleTargetReport(index, format) {
+      const r = currentJobResults[index];
+      if (!r) return;
+
+      const hostname = (r.target?.hostname || 'target').replace(/[^a-zA-Z0-9.-]/g, '_');
+      let filename = `${hostname}-report.${format}`;
+      let blob = null;
+
+      if (format === 'json') {
+        const jsonStr = JSON.stringify(r, null, 2);
+        blob = new Blob([jsonStr], { type: 'application/json' });
+      } else if (format === 'csv') {
+        const headers = ["URL", "Status", "HTTP Status", "Total Time (ms)", "Resolved IP", "Override IP", "Errors", "Redirects"];
+        const errs = (r.errors || []).join('; ');
+        const rds = (r.response?.redirects || []).join(' -> ');
+        const row = [
+          `"${r.url || ''}"`,
+          `"${r.status || ''}"`,
+          `"${r.response?.http_status || 0}"`,
+          `"${r.response?.total_time_ms || 0}"`,
+          `"${r.target?.resolved_ip || ''}"`,
+          `"${r.routing?.override_ip || ''}"`,
+          `"${errs}"`,
+          `"${rds}"`
+        ];
+        const csvContent = headers.join(',') + '\n' + row.join(',');
+        blob = new Blob([csvContent], { type: 'text/csv' });
+      }
+
+      if (blob) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
     }
 
     function closeModal() {
