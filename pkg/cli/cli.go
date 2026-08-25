@@ -67,14 +67,14 @@ Flags for scan:
   -t, --timeout           Timeout per HTTP request in seconds
   -f, --format            Output format: table, json, csv (default "table")
   -o, --output            Output file path (e.g. results.json or results.csv)
-  --resolve               Target IP override (e.g. krea.edu.in:172.232.121.131 or 172.232.121.131:krea.edu.in)
+  --resolve               Target IP override (e.g. example.com:198.51.100.50 or 198.51.100.50:example.com)
   --hosts-file            Path to hosts resolution file (/etc/hosts, CSV, JSON)
   --allow-private-targets Permit testing authorized private/staging IP ranges (requires explicit policy)
   --dry-run               Perform scope & SSRF validation without dialing targets
   --fail-on-error         Exit with code 1 if any target failed or was blocked
 
 Examples:
-  webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131
+  webpulse scan https://example.com --resolve example.com:198.51.100.50
   webpulse scan urls.txt --hosts-file ./hosts.test --workers 10
   webpulse scan urls.csv --format csv --output report.csv
   webpulse scan urls.json --dry-run
@@ -132,7 +132,7 @@ func runScanCommand(args []string) {
 	fs.StringVar(&format, "f", "table", "Output format (shorthand)")
 	fs.StringVar(&outputPath, "output", "", "Output file path")
 	fs.StringVar(&outputPath, "o", "", "Output file path (shorthand)")
-	fs.Var(&resolves, "resolve", "Target IP Override resolution (e.g. krea.edu.in:172.232.121.131)")
+	fs.Var(&resolves, "resolve", "Target IP Override resolution (e.g. example.com:198.51.100.50)")
 	fs.StringVar(&hostsFilePath, "hosts-file", "", "Path to hosts resolution file")
 	fs.BoolVar(&allowPrivateTargets, "allow-private-targets", false, "Permit testing authorized private/staging targets")
 	fs.BoolVar(&allowInsecure, "insecure", false, "Allow self-signed or untrusted TLS certificates")
@@ -148,7 +148,7 @@ func runScanCommand(args []string) {
 	targetInput := fs.Arg(0)
 	if targetInput == "" {
 		fmt.Println("Error: Target URL or input file path is required.")
-		fmt.Println("Example: webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131")
+		fmt.Println("Example: webpulse scan https://example.com --resolve example.com:198.51.100.50")
 		os.Exit(2)
 	}
 

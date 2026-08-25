@@ -132,20 +132,20 @@ func TestSafeDialerValidation(t *testing.T) {
 
 func TestTargetIPOverrideValidation(t *testing.T) {
 	dialer := NewSafeDialer(2 * time.Second)
-	dialer.HostResolutions["krea.edu.in"] = "172.232.121.131"
+	dialer.HostResolutions["example.com"] = "93.184.216.34"
 	ctx := context.Background()
 
-	ip, host, isOverride, err := dialer.ValidateDestination(ctx, "krea.edu.in")
+	ip, host, isOverride, err := dialer.ValidateDestination(ctx, "example.com")
 	if err != nil {
 		t.Fatalf("Unexpected error for target IP override: %v", err)
 	}
 	if !isOverride {
 		t.Error("Expected isOverride to be true")
 	}
-	if ip.String() != "172.232.121.131" {
-		t.Errorf("Expected IP 172.232.121.131, got %s", ip.String())
+	if ip.String() != "93.184.216.34" {
+		t.Errorf("Expected IP 93.184.216.34, got %s", ip.String())
 	}
-	if host != "krea.edu.in" {
-		t.Errorf("Expected host krea.edu.in, got %s", host)
+	if host != "example.com" {
+		t.Errorf("Expected host example.com, got %s", host)
 	}
 }

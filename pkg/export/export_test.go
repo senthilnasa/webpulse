@@ -40,8 +40,8 @@ func TestGenerateExports(t *testing.T) {
 			Routing: plugins.RoutingResult{
 				Hostname:           "example.com",
 				DNSIP:              "104.20.23.154",
-				OverrideIP:         "172.232.121.131",
-				ActualConnectionIP: "172.232.121.131",
+				OverrideIP:         "93.184.216.34",
+				ActualConnectionIP: "93.184.216.34",
 				HostHeader:         "example.com",
 				TLSSNI:             "example.com",
 				IsOverrideActive:   true,
@@ -70,7 +70,7 @@ func TestGenerateExports(t *testing.T) {
 	if !bytes.Contains(csvBytes, []byte("URL,Status,HTTP Status")) {
 		t.Error("CSV export missing header")
 	}
-	if !bytes.Contains(csvBytes, []byte("172.232.121.131")) {
+	if !bytes.Contains(csvBytes, []byte("93.184.216.34")) {
 		t.Error("CSV export missing override IP column data")
 	}
 
@@ -136,35 +136,35 @@ func TestReadURLsInput(t *testing.T) {
 
 func TestParseHostsFile(t *testing.T) {
 	// 1. Standard /etc/hosts format
-	hostsContent := []byte("# Hosts mapping test\n172.232.121.131 krea.edu.in www.krea.edu.in\n10.20.30.40 api.example.com\n")
+	hostsContent := []byte("# Hosts mapping test\n93.184.216.34 example.com www.example.com\n10.20.30.40 api.example.com\n")
 	resMap, err := ParseHostsFile(hostsContent)
 	if err != nil {
 		t.Fatalf("ParseHostsFile failed for /etc/hosts format: %v", err)
 	}
-	if resMap["krea.edu.in"] != "172.232.121.131" {
-		t.Errorf("Expected krea.edu.in -> 172.232.121.131, got %s", resMap["krea.edu.in"])
+	if resMap["example.com"] != "93.184.216.34" {
+		t.Errorf("Expected example.com -> 93.184.216.34, got %s", resMap["example.com"])
 	}
 	if resMap["api.example.com"] != "10.20.30.40" {
 		t.Errorf("Expected api.example.com -> 10.20.30.40, got %s", resMap["api.example.com"])
 	}
 
 	// 2. CSV format
-	csvHosts := []byte("hostname,ip\nkrea.edu.in,172.232.121.131\napi.example.com,10.20.30.40")
+	csvHosts := []byte("hostname,ip\nexample.com,93.184.216.34\napi.example.com,10.20.30.40")
 	csvMap, err := ParseHostsFile(csvHosts)
 	if err != nil {
 		t.Fatalf("ParseHostsFile failed for CSV format: %v", err)
 	}
-	if csvMap["krea.edu.in"] != "172.232.121.131" {
-		t.Errorf("CSV map missing krea.edu.in: %v", csvMap)
+	if csvMap["example.com"] != "93.184.216.34" {
+		t.Errorf("CSV map missing example.com: %v", csvMap)
 	}
 
 	// 3. JSON Map format
-	jsonHosts := []byte(`{"krea.edu.in": "172.232.121.131"}`)
+	jsonHosts := []byte(`{"example.com": "93.184.216.34"}`)
 	jsonMap, err := ParseHostsFile(jsonHosts)
 	if err != nil {
 		t.Fatalf("ParseHostsFile failed for JSON format: %v", err)
 	}
-	if jsonMap["krea.edu.in"] != "172.232.121.131" {
-		t.Errorf("JSON map missing krea.edu.in: %v", jsonMap)
+	if jsonMap["example.com"] != "93.184.216.34" {
+		t.Errorf("JSON map missing example.com: %v", jsonMap)
 	}
 }

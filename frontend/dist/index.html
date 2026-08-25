@@ -190,7 +190,7 @@
           <!-- URL Input -->
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">Target URLs (Paste multiple or upload TXT/CSV/JSON)</label>
-            <textarea id="input-urls" rows="5" placeholder="https://krea.edu.in&#10;https://api.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"></textarea>
+            <textarea id="input-urls" rows="5" placeholder="https://example.com&#10;https://api.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"></textarea>
           </div>
 
           <!-- File Upload Drag & Drop -->
@@ -217,8 +217,8 @@
             </p>
 
             <div id="override-input-panel" class="space-y-3 hidden pt-2">
-              <label class="block text-xs font-medium text-slate-300">Host Mappings (Paste <code class="text-amber-400">172.232.121.131 krea.edu.in</code> or CSV / JSON format)</label>
-              <textarea id="input-hosts-mapping" rows="3" placeholder="172.232.121.131 krea.edu.in&#10;10.20.30.40 api.example.com" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"></textarea>
+              <label class="block text-xs font-medium text-slate-300">Host Mappings (Paste <code class="text-amber-400">198.51.100.50 example.com</code> or CSV / JSON format)</label>
+              <textarea id="input-hosts-mapping" rows="3" placeholder="198.51.100.50 example.com&#10;10.20.30.40 api.example.com" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"></textarea>
 
               <div class="flex items-center space-x-2 pt-1">
                 <input type="checkbox" id="check-allow-insecure" class="w-4 h-4 text-emerald-600 bg-slate-950 border-slate-700 rounded focus:ring-emerald-500"/>
@@ -228,9 +228,9 @@
               </div>
 
               <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                <div><span class="text-slate-300 font-bold">Connect IP:</span> <code class="text-amber-300">172.232.121.131</code></div>
-                <div><span class="text-slate-300 font-bold">HTTP Host Header:</span> <code class="text-emerald-400">krea.edu.in</code></div>
-                <div><span class="text-slate-300 font-bold">TLS SNI:</span> <code class="text-emerald-400">krea.edu.in</code></div>
+                <div><span class="text-slate-300 font-bold">Connect IP:</span> <code class="text-amber-300">198.51.100.50</code></div>
+                <div><span class="text-slate-300 font-bold">HTTP Host Header:</span> <code class="text-emerald-400">example.com</code></div>
+                <div><span class="text-slate-300 font-bold">TLS SNI:</span> <code class="text-emerald-400">example.com</code></div>
               </div>
             </div>
           </div>

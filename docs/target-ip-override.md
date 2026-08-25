@@ -3,30 +3,30 @@
 ## Overview
 
 The **Target IP Override / Host Mapping** feature allows authorized users to probe a target hostname against a specific server IP (such as a local, staging, QA, or pre-production migration server) while preserving the original hostname for:
-- **HTTP Host Header** (`Host: krea.edu.in`)
-- **TLS SNI (Server Name Indication)** (`SNI: krea.edu.in`)
-- **TLS Certificate Validation** (Validates certificate against `krea.edu.in`)
+- **HTTP Host Header** (`Host: example.com`)
+- **TLS SNI (Server Name Indication)** (`SNI: example.com`)
+- **TLS Certificate Validation** (Validates certificate against `example.com`)
 
 ---
 
 ## 1. Practical Example: Pre-Cutover Staging & Migration Testing
 
-Suppose `krea.edu.in` resolves in public DNS to production server `104.20.23.154`.
+Suppose `example.com` resolves in public DNS to production server `104.20.23.154`.
 
-Before updating public DNS, you want to test a newly provisioned migration server at IP `172.232.121.131`:
+Before updating public DNS, you want to test a newly provisioned migration server at IP `198.51.100.50`:
 
 ```text
-Target Hostname:      krea.edu.in
+Target Hostname:      example.com
 Production DNS IP:    104.20.23.154
-Override Destination: 172.232.121.131
+Override Destination: 198.51.100.50
 ```
 
 ### What WebPulse Does Under the Hood:
-1. **TCP Socket**: Connects directly to `172.232.121.131:443`.
-2. **TLS ClientHello**: Sends `SNI = krea.edu.in`.
-3. **TLS Certificate Check**: Validates server certificate presented by `172.232.121.131` against domain `krea.edu.in`.
-4. **HTTP Header**: Sends `Host: krea.edu.in`.
-5. **DNS & Routing Telemetry**: Reports both `Normal DNS IP (104.20.23.154)` and `Actual Connection IP (172.232.121.131)` separately.
+1. **TCP Socket**: Connects directly to `198.51.100.50:443`.
+2. **TLS ClientHello**: Sends `SNI = example.com`.
+3. **TLS Certificate Check**: Validates server certificate presented by `198.51.100.50` against domain `example.com`.
+4. **HTTP Header**: Sends `Host: example.com`.
+5. **DNS & Routing Telemetry**: Reports both `Normal DNS IP (104.20.23.154)` and `Actual Connection IP (198.51.100.50)` separately.
 
 ---
 
@@ -34,13 +34,13 @@ Override Destination: 172.232.121.131
 
 ### Direct `--resolve` Flag
 ```bash
-webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131
+webpulse scan https://example.com --resolve example.com:198.51.100.50
 ```
 
 Multiple resolutions:
 ```bash
 webpulse scan urls.txt \
-  --resolve krea.edu.in:172.232.121.131 \
+  --resolve example.com:198.51.100.50 \
   --resolve api.example.com:10.20.30.40
 ```
 
@@ -54,13 +54,13 @@ webpulse scan urls.txt --hosts-file ./hosts.test
 Example `./hosts.test` file:
 ```text
 # Staging Server Mappings
-172.232.121.131 krea.edu.in
-10.20.30.40     api.example.com
+198.51.100.50 example.com
+10.20.30.40   api.example.com
 ```
 
 ### Dry Run Pre-Check
 ```bash
-webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131 --dry-run
+webpulse scan https://example.com --resolve example.com:198.51.100.50 --dry-run
 ```
 
 ---
@@ -70,10 +70,10 @@ webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131 --dry-ru
 ### `POST /api/v1/jobs` Payload
 ```json
 {
-  "urls": ["https://krea.edu.in"],
+  "urls": ["https://example.com"],
   "profile": "standard",
   "host_resolutions": {
-    "krea.edu.in": "172.232.121.131"
+    "example.com": "198.51.100.50"
   }
 }
 ```
@@ -81,8 +81,8 @@ webpulse scan https://krea.edu.in --resolve krea.edu.in:172.232.121.131 --dry-ru
 Or pass raw hosts file text:
 ```json
 {
-  "urls": ["https://krea.edu.in"],
-  "hosts_file_content": "172.232.121.131 krea.edu.in\n10.20.30.40 api.example.com"
+  "urls": ["https://example.com"],
+  "hosts_file_content": "198.51.100.50 example.com\n10.20.30.40 api.example.com"
 }
 ```
 
@@ -92,19 +92,19 @@ Or pass raw hosts file text:
 
 ```json
 {
-  "url": "https://krea.edu.in",
+  "url": "https://example.com",
   "status": "completed",
   "target": {
-    "hostname": "krea.edu.in",
-    "resolved_ip": "172.232.121.131"
+    "hostname": "example.com",
+    "resolved_ip": "198.51.100.50"
   },
   "routing": {
-    "hostname": "krea.edu.in",
+    "hostname": "example.com",
     "dns_ip": "104.20.23.154",
-    "override_ip": "172.232.121.131",
-    "actual_connection_ip": "172.232.121.131",
-    "host_header": "krea.edu.in",
-    "tls_sni": "krea.edu.in",
+    "override_ip": "198.51.100.50",
+    "actual_connection_ip": "198.51.100.50",
+    "host_header": "example.com",
+    "tls_sni": "example.com",
     "is_override_active": true
   }
 }
