@@ -41,10 +41,32 @@ type ProjectRecord struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// snapshot returns a copy safe to hand out to readers while a job is still
+// being mutated by its worker goroutine. Individual results are immutable once
+// recorded, so the element pointers can be shared.
+func (j *JobRecord) snapshot() *JobRecord {
+	cp := *j
+	if j.Results != nil {
+		cp.Results = make([]*engine.TargetResult, len(j.Results))
+		copy(cp.Results, j.Results)
+	}
+	if j.CompletedAt != nil {
+		completedAt := *j.CompletedAt
+		cp.CompletedAt = &completedAt
+	}
+	return &cp
+}
+
+// progressSaveInterval throttles disk writes for high-frequency progress
+// updates: a running job would otherwise rewrite the whole database file once
+// per completed URL.
+const progressSaveInterval = 750 * time.Millisecond
+
 // Store handles persistent storage operations.
 type Store struct {
 	mu       sync.RWMutex
 	filePath string
+	lastSave map[string]time.Time
 	Data     struct {
 		Projects map[string]*ProjectRecord `json:"projects"`
 		Jobs     map[string]*JobRecord     `json:"jobs"`
@@ -64,6 +86,7 @@ func NewStore(filePath string) (*Store, error) {
 
 	store := &Store{
 		filePath: filePath,
+		lastSave: make(map[string]time.Time),
 	}
 	store.Data.Projects = make(map[string]*ProjectRecord)
 	store.Data.Jobs = make(map[string]*JobRecord)
@@ -117,7 +140,28 @@ func (s *Store) UpdateJob(job *JobRecord) error {
 	return s.saveUnlocked()
 }
 
-// GetJob returns a job record by ID.
+// MutateJob applies fn to the stored job under the write lock so that live
+// progress updates stay consistent with concurrent readers. When flush is false
+// the record is persisted at most once per progressSaveInterval; pass true for
+// state transitions that must hit disk immediately.
+func (s *Store) MutateJob(jobID string, flush bool, fn func(*JobRecord)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.Data.Jobs[jobID]
+	if !ok {
+		return ErrJobNotFound
+	}
+	fn(job)
+
+	if !flush && time.Since(s.lastSave[jobID]) < progressSaveInterval {
+		return nil
+	}
+	s.lastSave[jobID] = time.Now()
+	return s.saveUnlocked()
+}
+
+// GetJob returns a snapshot of a job record by ID.
 func (s *Store) GetJob(jobID string) (*JobRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -126,17 +170,17 @@ func (s *Store) GetJob(jobID string) (*JobRecord, error) {
 	if !ok {
 		return nil, ErrJobNotFound
 	}
-	return job, nil
+	return job.snapshot(), nil
 }
 
-// ListJobs returns all jobs ordered by created timestamp.
+// ListJobs returns snapshots of all jobs ordered by created timestamp.
 func (s *Store) ListJobs() []*JobRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var list []*JobRecord
 	for _, j := range s.Data.Jobs {
-		list = append(list, j)
+		list = append(list, j.snapshot())
 	}
 
 	return list

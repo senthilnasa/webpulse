@@ -180,6 +180,9 @@ func (e *DiagnosticEngine) ExecuteJob(ctx context.Context, jobID string, urls []
 						Errors:        []string{"Job cancelled"},
 					}
 					results[item.index] = res
+					if c := atomic.AddInt32(&completedCounter, 1); onProgress != nil {
+						onProgress(int(c), total, res)
+					}
 					continue
 				default:
 				}

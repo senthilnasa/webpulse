@@ -58,7 +58,7 @@ func (sd *SafeDialer) ValidateDestination(ctx context.Context, host string) (net
 		}
 	}
 
-	if IsHostnameRestricted(hostname) {
+	if IsHostnameRestricted(hostname) && !sd.AllowPrivateTargets {
 		return nil, "", false, fmt.Errorf("%w: hostname '%s' is restricted", ErrPrivateIP, hostname)
 	}
 

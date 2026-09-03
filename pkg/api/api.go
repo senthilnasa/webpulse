@@ -208,6 +208,21 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			eng := engine.NewEngine(scopePolicy)
 
 			results := eng.ExecuteJob(jobCtx, jobID, req.URLs, prof, func(completed, total int, res *engine.TargetResult) {
+				// Persist live progress so polling clients (and reconnecting
+				// ones) see the job advance instead of a frozen 0/N.
+				_ = s.Store.MutateJob(jobID, false, func(rec *db.JobRecord) {
+					rec.CompletedURLs = completed
+					switch res.Status {
+					case "failed":
+						rec.FailedURLs++
+					case "blocked":
+						rec.BlockedURLs++
+					case "skipped":
+						rec.SkippedURLs++
+					}
+					rec.Results = append(rec.Results, res)
+				})
+
 				// Broadcast SSE update
 				msg, _ := json.Marshal(map[string]interface{}{
 					"type":      "progress",
@@ -219,23 +234,29 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			})
 
 			now := time.Now()
-			jobRec.CompletedAt = &now
-			jobRec.Status = "completed"
-			jobRec.Results = results
-			jobRec.CompletedURLs = len(results)
-
-			for _, r := range results {
-				switch r.Status {
-				case "failed":
-					jobRec.FailedURLs++
-				case "blocked":
-					jobRec.BlockedURLs++
-				case "skipped":
-					jobRec.SkippedURLs++
+			_ = s.Store.MutateJob(jobID, true, func(rec *db.JobRecord) {
+				rec.CompletedAt = &now
+				if rec.Status != "cancelled" {
+					rec.Status = "completed"
 				}
-			}
 
-			_ = s.Store.UpdateJob(jobRec)
+				// Reconcile against the ordered result set: progress callbacks
+				// record completion order, and cancelled targets never reach
+				// them at all.
+				rec.Results = results
+				rec.CompletedURLs = len(results)
+				rec.FailedURLs, rec.BlockedURLs, rec.SkippedURLs = 0, 0, 0
+				for _, r := range results {
+					switch r.Status {
+					case "failed":
+						rec.FailedURLs++
+					case "blocked":
+						rec.BlockedURLs++
+					case "skipped":
+						rec.SkippedURLs++
+					}
+				}
+			})
 
 			finalMsg, _ := json.Marshal(map[string]interface{}{
 				"type":   "completed",
@@ -282,8 +303,9 @@ func (s *Server) handleJobSubRoutes(w http.ResponseWriter, r *http.Request) {
 		s.streamMutex.Unlock()
 		if ok && cancel != nil {
 			cancel()
-			job.Status = "cancelled"
-			_ = s.Store.UpdateJob(job)
+			_ = s.Store.MutateJob(jobID, true, func(rec *db.JobRecord) {
+				rec.Status = "cancelled"
+			})
 			writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 		} else {
 			writeError(w, http.StatusBadRequest, "Job is not actively running")
@@ -315,16 +337,33 @@ func (s *Server) handleJobSubRoutes(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
-		messageChan := make(chan string, 10)
-		s.streamMutex.Lock()
-		s.jobStreams[jobID] = append(s.jobStreams[jobID], messageChan)
-		s.streamMutex.Unlock()
-
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeError(w, http.StatusInternalServerError, "Streaming unsupported")
 			return
 		}
+
+		messageChan := make(chan string, 256)
+		s.streamMutex.Lock()
+		s.jobStreams[jobID] = append(s.jobStreams[jobID], messageChan)
+		s.streamMutex.Unlock()
+
+		// Unregister on disconnect, otherwise every reopened job detail leaks a
+		// subscriber that broadcasts keep writing to.
+		defer func() {
+			s.streamMutex.Lock()
+			defer s.streamMutex.Unlock()
+			subs := s.jobStreams[jobID]
+			for i, ch := range subs {
+				if ch == messageChan {
+					s.jobStreams[jobID] = append(subs[:i], subs[i+1:]...)
+					break
+				}
+			}
+			if len(s.jobStreams[jobID]) == 0 {
+				delete(s.jobStreams, jobID)
+			}
+		}()
 
 		notify := r.Context().Done()
 		for {

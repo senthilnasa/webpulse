@@ -3,11 +3,13 @@ package plugins
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"strings"
 	"time"
 
@@ -31,12 +33,24 @@ func (p *HTTPProbePlugin) Description() string {
 
 func (p *HTTPProbePlugin) Execute(ctx context.Context, target *TargetSpec) (*PluginResult, error) {
 	parsedURL, err := ssrf.SanitizeURL(target.URL)
-	if err != nil && !target.AllowPrivateTargets {
-		return &PluginResult{
-			PluginName:   p.Name(),
-			Success:      false,
-			ErrorMessage: fmt.Sprintf("SSRF / URL Validation Blocked: %v", err),
-		}, nil
+	if err != nil {
+		// Only the private-target restriction is waivable; malformed URLs and
+		// unsupported schemes stay blocked either way.
+		if !target.AllowPrivateTargets || !errors.Is(err, ssrf.ErrPrivateIP) {
+			return &PluginResult{
+				PluginName:   p.Name(),
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("SSRF / URL Validation Blocked: %v", err),
+			}, nil
+		}
+		parsedURL, err = url.Parse(target.URL)
+		if err != nil {
+			return &PluginResult{
+				PluginName:   p.Name(),
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("SSRF / URL Validation Blocked: %v", err),
+			}, nil
+		}
 	}
 	if parsedURL == nil {
 		return &PluginResult{

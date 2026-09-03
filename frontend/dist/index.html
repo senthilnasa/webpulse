@@ -478,6 +478,8 @@
   <script>
     let currentJobResults = [];
     let currentSSE = null;
+    let jobPollTimer = null;
+    let pendingRefresh = null;
 
     document.addEventListener('DOMContentLoaded', () => {
       refreshEgressHeader();
@@ -495,6 +497,9 @@
     }
 
     function navigateTo(pageId) {
+      if (pageId !== 'job-detail') {
+        stopJobWatchers();
+      }
       document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
       document.querySelectorAll('.nav-btn').forEach(el => {
         el.classList.remove('text-emerald-400', 'bg-emerald-500/10');
@@ -675,10 +680,7 @@
       navigateTo('job-detail');
       document.getElementById('detail-job-id').innerText = jobId;
 
-      if (currentSSE) {
-        currentSSE.close();
-        currentSSE = null;
-      }
+      stopJobWatchers();
 
       const res = await fetch(`/api/v1/jobs/${jobId}`);
       const job = await res.json();
@@ -686,17 +688,71 @@
       updateJobUI(job);
 
       if (job.status === 'running') {
-        currentSSE = new EventSource(`/api/v1/jobs/${jobId}/stream`);
-        currentSSE.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === 'progress') {
-            fetch(`/api/v1/jobs/${jobId}`).then(r => r.json()).then(updatedJob => updateJobUI(updatedJob));
-          } else if (data.type === 'completed') {
-            fetch(`/api/v1/jobs/${jobId}`).then(r => r.json()).then(updatedJob => updateJobUI(updatedJob));
-            currentSSE.close();
-          }
-        };
+        startJobWatchers(jobId);
       }
+    }
+
+    function stopJobWatchers() {
+      if (currentSSE) {
+        currentSSE.close();
+        currentSSE = null;
+      }
+      if (jobPollTimer) {
+        clearInterval(jobPollTimer);
+        jobPollTimer = null;
+      }
+      pendingRefresh = null;
+    }
+
+    // Full job payloads carry every result, so refresh the table on a timer
+    // rather than once per progress event; the counters update instantly from
+    // the event itself.
+    function refreshJobDetail(jobId) {
+      if (pendingRefresh) return;
+      pendingRefresh = fetch(`/api/v1/jobs/${jobId}`)
+        .then(r => r.json())
+        .then(job => {
+          updateJobUI(job);
+          if (job.status !== 'running') {
+            stopJobWatchers();
+          }
+        })
+        .catch(e => console.error('Job refresh failed:', e))
+        .finally(() => { pendingRefresh = null; });
+    }
+
+    function startJobWatchers(jobId) {
+      let lastTableRefresh = 0;
+
+      currentSSE = new EventSource(`/api/v1/jobs/${jobId}/stream`);
+      currentSSE.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'progress') {
+          applyProgressCounters(data);
+          if (Date.now() - lastTableRefresh > 2000) {
+            lastTableRefresh = Date.now();
+            refreshJobDetail(jobId);
+          }
+        } else if (data.type === 'completed') {
+          refreshJobDetail(jobId);
+        }
+      };
+
+      // Polling fallback: the stream can drop, be buffered by a proxy, or shed
+      // messages under load, and the UI must never sit frozen because of it.
+      jobPollTimer = setInterval(() => refreshJobDetail(jobId), 5000);
+    }
+
+    function applyProgressCounters(data) {
+      const completed = data.completed || 0;
+      const total = data.total || 0;
+
+      document.getElementById('detail-completed-count').innerText = completed;
+      document.getElementById('detail-total-count').innerText = total;
+
+      const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+      document.getElementById('detail-percent-text').innerText = `${pct}%`;
+      document.getElementById('detail-progress-fill').style.width = `${pct}%`;
     }
 
     function updateJobUI(job) {
@@ -714,6 +770,7 @@
       document.getElementById('counter-workers').innerText = job.concurrency || 10;
 
       currentJobResults = job.results || [];
+      currentJobResults.forEach((r, i) => { r._idx = i; });
 
       let hasOverride = false;
       if (currentJobResults.some(r => r.routing && r.routing.is_override_active)) {
@@ -725,7 +782,9 @@
         document.getElementById('detail-override-badge').classList.add('hidden');
       }
 
-      renderResultsTable(currentJobResults);
+      // Re-apply the active tab/search so a live refresh doesn't reset what the
+      // user is looking at.
+      filterResultsTable();
     }
 
     let activeStatusFilter = 'all';
@@ -789,7 +848,7 @@
       }
 
       tbody.innerHTML = results.map((r) => {
-        const origIndex = currentJobResults.indexOf(r);
+        const origIndex = r._idx !== undefined ? r._idx : currentJobResults.indexOf(r);
         let statusPill = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Completed</span>`;
         if (r.status === 'failed') {
           statusPill = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">Failed</span>`;
@@ -1029,6 +1088,7 @@
       const jobId = document.getElementById('detail-job-id').innerText;
       await fetch(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST' });
       alert(`Job ${jobId} cancelled.`);
+      refreshJobDetail(jobId);
     }
   </script>
 </body>
